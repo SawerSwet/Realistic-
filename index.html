@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Полный 3D Движок (WebGL 1.0)</title>
+    <style>
+        body { margin:0; overflow:hidden; background:#1a2a3a; font-family:monospace; }
+        canvas { display:block; width:100vw; height:100vh; }
+        #fps { position:fixed; top:10px; right:10px; color:#0f0; background:rgba(0,0,0,0.7); padding:6px 12px; border-radius:4px; z-index:100; font-size:14px; pointer-events:none; }
+        #log { position:fixed; bottom:10px; left:10px; color:#0f0; background:rgba(0,0,0,0.7); padding:6px 12px; border-radius:4px; z-index:100; font-size:12px; max-height:50vh; overflow-y:auto; pointer-events:none; white-space:pre-wrap; }
+    </style>
+</head>
+<body>
+    <div id="fps">FPS: 0</div>
+    <div id="log">Загрузка полного движка...</div>
+    <script>
+        // ============================================================
+        // 1. ЛОГГЕР
+        // ============================================================
+        const logDiv = document.getElementById('log');
+        const fpsDiv = document.getElementById('fps');
+        function log(m) { 
+            const t = new Date().toTimeString().split(' ')[0];
+            logDiv.textContent += '\n[' + t + '] ' + m; 
+            console.log(m); 
+        }
+
+        // ============================================================
+        // 2. МАТЕМАТИКА: V3
+        // ============================================================
+        class V3 {
+            constructor(x=0, y=0, z=0) {
+                this.x = x; this.y = y; this.z = z;
+            }
+            static dot(a, b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+            dot(b) { return V3.dot(this, b); }
+            cross(b) {
+                return new V3(
+                    this.y * b.z - this.z * b.y,
+                    this.z * b.x - this.x * b.z,
+                    this.x * b.y - this.y * b.x
+                );
+            }
+            norm() {
+                let l = Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
+                return l > 0 ? new V3(this.x / l, this.y / l, this.z / l) : new V3();
+            }
+            sub(b) { return new V3(this.x - b.x, this.y - b.y, this.z - b.z); }
+            scale(s) { return new V3(this.x * s, this.y * s, this.z * s); }
+            add(b) { return new V3(this.x + b.x, this.y + b.y, this.z + b.z); }
+            clone() { return new V3(this.x, this.y, this.z); }
+        }
+
+        // ============================================================
+        // 3. МАТЕМАТИКА: M4
+        // ============================================================
+        class M4 {
+            constructor() {
+                this.m = new Float32Array(16);
+                this.m[0] = this.m[5] = this.m[10] = this.m[15] = 1;
+            }
+            static lookAt(eye, center, up) {
+                let z = eye.sub(center).norm();
+                let x = up.cross(z).norm();
+                let y = z.cross(x).norm();
+                let m = new M4();
+                m.m[0] = x.x; m.m[1] = y.x; m.m[2] = z.x; m.m[3] = 0;
+                m.m[4] = x.y; m.m[5] = y.y; m.m[6] = z.y; m.m[7] = 0;
+                m.m[8] = x.z; m.m[9] = y.z; m.m[10] = z.z; m.m[11] = 0;
+                m.m[12] = -x.dot(eye); m.m[13] = -y.dot(eye); m.m[14] = -z.dot(eye); m.m[15] = 1;
+                return m;
+            }
+            mul(b) {
+                let a = this.m, c = b.m, r = new Float32Array(16);
+                for (let i = 0; i < 4; i++) {
+                    for (let j = 0; j < 4; j++) {
+                        r[i * 4 + j] = a[i * 4] * c[j] + a[i * 4 + 1] * c[4 + j] + a[i * 4 + 2] * c[8 + j] + a[i * 4 + 3] * c[12 + j];
+                    }
+                }
+                let n = new M4(); n.m = r; return n;
+            }
+            perspective(fov, aspect, near, far) {
+                let f = 1 / Math.tan(fov / 2);
+                let m = new M4();
+                m.m[0] = f / aspect; m.m[5] = f;
+                m.m[10] = (far + near) / (near - far); m.m[11] = -1;
+                m.m[14] = (2 * far * near) / (near - far); m.m[15] = 0;
+                return m;
+            }
+            translate(v) { let m = new M4(); m.m[12] = v.x; m.m[13] = v.y; m.m[14] = v.z; return this.mul(m); }
+            scale(v) { let m = new M4(); m.m[0] = v.x; m.m[5] = v.y; m.m[10] = v.z; return this.mul(m); }
+            clone() { let n = new M4(); n.m.set(this.m); return n; }
+        }
+
+        // ============================================================
+        // 4. ПРОЦЕДУРНЫЙ ШУМ (Perlin + fBm)
+        // ============================================================
+        function permute(x) { return ((x * 34) + 1) * x % 289; }
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+        function lerp(a, b, t) { return a + t * (b - a); }
+        function grad(hash, x, y) { let h = hash & 3; let u = h < 2 ? x : y; let v = h < 2 ? y : x; return ((h & 1) ? -u : u) + ((h & 2) ? -v : v); }
+
+        const p = new Uint8Array(512);
+        for (let i = 0; i < 256; i++) p[i] = i;
+        for (let i = 255; i > 0; i--) {
+            let j = Math.floor(Math.random() * (i + 1));
+            [p[i], p[j]] = [p[j], p[i]];
+        }
+        for (let i = 0; i < 256; i++) p[256 + i] = p[i];
+
+        function perlin2(x, y) {
+            let xi = Math.floor(x), yi = Math.floor(y);
+            let xf = x - xi, yf = y - yi;
+            let u = fade(xf), v = fade(yf);
+            let aaa = p[p[xi & 255] + yi & 255];
+            let aba = p[p[(xi + 1) & 255] + yi & 255];
+            let aab = p[p[xi & 255] + (yi + 1) & 255];
+            let abb = p[p[(xi + 1) & 255] + (yi + 1) & 255];
+            return lerp(
+                lerp(grad(aaa, xf, yf), grad(aba, xf - 1, yf), u),
+                lerp(grad(aab, xf, yf - 1), grad(abb, xf - 1, yf - 1), u), v
+            );
+        }
+        function fbm(x, y, octaves = 4) {
+            let value = 0, freq = 1, amp = 1, total = 0;
+            for (let i = 0; i < octaves; i++) {
+                value += amp * perlin2(x * freq, y * freq);
+                total += amp;
+                amp *= 0.5;
+                freq *= 2;
+            }
+            return value / total;
+        }
+
+        // ============================================================
+        // 5. ИНИЦИАЛИЗАЦИЯ WEBGL
+        // ============================================================
+        let canvas = document.createElement('canvas');
+        document.body.appendChild(canvas);
+        let gl = canvas.getContext('webgl', { antialias: true, alpha: false });
+        if (!gl) { throw new Error('WebGL не поддерживается'); }
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        log('WebGL 1.0 инициализирован');
+
+        let extInst = gl.getExtension('ANGLE_instanced_arrays');
+        let extVAO = gl.getExtension('OES_vertex_array_object');
+        if (!extInst) log('ANGLE_instanced_arrays не поддерживается');
+        log('Расширения загружены');
+
+        // Адаптация под GPU
+        let quality = 1.0;
+        try {
+            let renderer = gl.getParameter(gl.RENDERER).toLowerCase();
+            if (renderer.includes('mali') || renderer.includes('adreno') || renderer.includes('intel')) {
+                quality = 0.65;
+                log('Обнаружен мобильный GPU, качество снижено до 0.65');
+            }
+        } catch (e) {}
+
+        // ============================================================
+        // 6. ГЕНЕРАЦИЯ ТЕКСТУР (RGBA, UNSIGNED_BYTE, 256/512)
+        // ============================================================
+        function generateGrassTexture() {
+            let size = 256;
+            let data = new Uint8Array(size * size * 4);
+            for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+                let nx = x / size * 4, ny = y / size * 4;
+                let h = fbm(nx + 0.5, ny + 0.5, 5);
+                let green = 0.4 + h * 0.6;
+                let red = 0.3 + h * 0.4;
+                data[(y * size + x) * 4] = Math.floor(red * 255);
+                data[(y * size + x) * 4 + 1] = Math.floor(green * 255);
+                data[(y * size + x) * 4 + 2] = Math.floor(30 + h * 60);
+                data[(y * size + x) * 4 + 3] = 255;
+            }
+            return data;
+        }
+        function generateCloudTexture() {
+            let size = 512;
+            let data = new Uint8Array(size * size * 4);
+            for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+                let n = fbm(x / size * 3 + 0.5, y / size * 3 + 0.5, 6);
+                let a = Math.max(0, Math.min(1, (n + 0.5) * 1.2));
+                let v = Math.floor(a * 255);
+                data[(y * size + x) * 4] = v;
+                data[(y * size + x) * 4 + 1] = v;
+                data[(y * size + x) * 4 + 2] = v;
+                data[(y * size + x) * 4 + 3] = Math.floor(a * 220);
+            }
+            return data;
+        }
+        function createTexture(data, width, height) {
+            let tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+            return tex;
+        }
+        let texGrass = createTexture(generateGrassTexture(), 256, 256);
+        let texCloud = createTexture(generateCloudTexture(), 512, 512);
+        log('Текстуры созданы');
+
+        // ============================================================
+        // 7. ГЕОМЕТРИЯ ЛАНДШАФТА
+        // ============================================================
+        let seg = Math.floor(64 * quality);
+        let size = 30;
+        let verts = [], uvs = [], idx = [];
+        for (let z = 0; z <= seg; z++) for (let x = 0; x <= seg; x++) {
+            let u = x / seg, v = z / seg;
+            let px = (u - 0.5) * size, pz = (v - 0.5) * size;
+            let h = fbm(u * 6 + 0.5, v * 6 + 0.5, 5) * 2.5 + 0.5;
+            verts.push(px, h, pz);
+            uvs.push(u * 10, v * 10);
+        }
+        for (let z = 0; z < seg; z++) for (let x = 0; x < seg; x++) {
+            let a = z * (seg + 1) + x, b = a + 1, c = a + seg + 1, d = c + 1;
+            idx.push(a, b, c, b, d, c);
+        }
+        function createVBO(data) { let b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW); return b; }
+        let terrVBO = createVBO(verts);
+        let terrUVBO = createVBO(uvs);
+        let terrIBO = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrIBO); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+        log('Геометрия ландшафта создана');
+
+        // ============================================================
+        // 8. ГЕОМЕТРИЯ ВОДЫ
+        // ============================================================
+        let wSeg = 32;
+        let wVerts = [];
+        for (let z = 0; z <= wSeg; z++) for (let x = 0; x <= wSeg; x++) {
+            let u = x / wSeg, v = z / wSeg;
+            wVerts.push((u - 0.5) * 30, -0.2, (v - 0.5) * 30);
+        }
+        let waterVBO = createVBO(wVerts);
+        log('Геометрия воды создана');
+
+        // ============================================================
+        // 9. ТРАВА (GPU Instancing)
+        // ============================================================
+        let grassCount = Math.floor(50000 * quality);
+        let gVerts = [];
+        for (let i = 0; i < grassCount; i++) {
+            let x = (Math.random() - 0.5) * 28;
+            let z = (Math.random() - 0.5) * 28;
+            let h = fbm(x / 6 + 0.5, z / 6 + 0.5, 4) * 2.5 + 0.5;
+            let w = 0.04, hh = 0.2 + Math.random() * 0.25;
+            let phase = Math.random() * 6.28;
+            let base = [x, h, z];
+            let tip = [x, h + hh, z];
+            let l = [x - w, h, z], r = [x + w, h, z];
+            let verts = [...base, ...tip, ...l, ...base, ...r, ...tip];
+            gVerts.push(...verts);
+            gVerts.push(phase, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6, 0);
+        }
+        let gVBO = createVBO(gVerts);
+        log('Трава загружена (' + grassCount + ' травинок)');
+
+        // ============================================================
+        // 10. ОБЛАКА (Частицы)
+        // ============================================================
+        let cloudCount = Math.floor(800 * quality);
+        let cPos = [], cSize = [], cOff = [];
+        for (let i = 0; i < cloudCount; i++) {
+            let x = (Math.random() - 0.5) * 60;
+            let y = 6 + Math.random() * 10;
+            let z = (Math.random() - 0.5) * 60;
+            cPos.push(x, y, z);
+            cSize.push(4 + Math.random() * 12);
+            cOff.push((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4);
+        }
+        let cVBO = createVBO(cPos);
+        let cSBO = createVBO(cSize);
+        let cOBO = createVBO(cOff);
+        log('Облака загружены (' + cloudCount + ' частиц)');
+
+        // ============================================================
+        // 11. ШЕЙДЕРЫ
+        // ============================================================
+        function compileShader(src, type) {
+            let shader = gl.createShader(type);
+            gl.shaderSource(shader, src);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                let info = gl.getShaderInfoLog(shader);
+                throw new Error('Ошибка компиляции шейдера: ' + info);
+            }
+            return shader;
+        }
+        function createProgram(vsrc, fsrc) {
+            let vs = compileShader(vsrc, gl.VERTEX_SHADER);
+            let fs = compileShader(fsrc, gl.FRAGMENT_SHADER);
+            let prog = gl.createProgram();
+            gl.attachShader(prog, vs);
+            gl.attachShader(prog, fs);
+            gl.linkProgram(prog);
+            if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+                throw new Error('Ошибка линковки программы');
+            }
+            return prog;
+        }
+
+        // --- Ландшафт ---
+        let vsTerrain = `
+            attribute vec3 aPos; attribute vec2 aUV;
+            uniform mat4 uMVP;
+            varying vec2 vUV;
+            void main() {
+                vUV = aUV;
+                gl_Position = uMVP * vec4(aPos, 1.0);
+            }
+        `;
+        let fsTerrain = `
+            precision highp float;
+            uniform sampler2D uTex; uniform vec3 uFogColor; uniform float uFogDensity;
+            varying vec2 vUV;
+            void main() {
+                vec4 col = texture2D(uTex, vUV);
+                float fog = 1.0 - exp(-uFogDensity * uFogDensity * 100.0);
+                gl_FragColor = mix(col, vec4(uFogColor, 1.0), fog);
+            }
+        `;
+        let progTerrain = createProgram(vsTerrain, fsTerrain);
+
+        // --- Вода ---
+        let vsWater = `
+            attribute vec3 aPos;
+            uniform mat4 uMVP; uniform float uTime;
+            varying float vHeight;
+            float gerstner(vec2 pos, float time) {
+                float h = 0.0;
+                for(int i=0; i<4; i++) {
+                    float angle = float(i)*1.57;
+                    vec2 dir = vec2(cos(angle), sin(angle));
+                    float amp = 0.4 + float(i)*0.1;
+                    float freq = 0.5 + float(i)*0.3;
+                    float speed = 1.2 + float(i)*0.4;
+                    h += amp * sin(dot(dir, pos)*freq + time*speed);
+                }
+                return h;
+            }
+            void main() {
+                float h = gerstner(aPos.xz, uTime);
+                vec3 pos = aPos + vec3(0.0, h, 0.0);
+                vHeight = h;
+                gl_Position = uMVP * vec4(pos, 1.0);
+            }
+        `;
+        let fsWater = `
+            precision highp float;
+            uniform float uTime; uniform vec3 uViewDir; uniform vec3 uSunDir;
+            varying float vHeight;
+            void main() {
+                vec3 col = mix(vec3(0.1,0.6,0.9), vec3(0.0,0.2,0.5), vHeight*0.5+0.5);
+                float foam = smoothstep(0.1, 0.8, vHeight+0.5) * 0.5;
+                float shore = abs(vHeight+0.2)*0.5;
+                col += vec3(1.0,1.0,1.0) * foam * step(shore, 0.3);
+                vec3 N = normalize(vec3(0.0, 1.0, 0.0));
+                vec3 V = normalize(uViewDir);
+                float fresnel = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+                col += vec3(1.0,0.9,0.8) * fresnel * 0.4;
+                gl_FragColor = vec4(col, 0.7 + shore*0.3);
+            }
+        `;
+        let progWater = createProgram(vsWater, fsWater);
+
+        // --- Трава ---
+        let vsGrass = `
+            attribute vec3 aPos; attribute vec4 aRandom;
+            uniform mat4 uMVP; uniform float uTime; uniform vec3 uWind;
+            void main() {
+                float phase = aRandom.x;
+                float sway = sin(uTime*1.5 + phase) * 0.3;
+                vec3 pos = aPos + vec3(uWind.x*sway, 0.0, uWind.z*sway);
+                gl_Position = uMVP * vec4(pos, 1.0);
+            }
+        `;
+        let fsGrass = `
+            precision highp float;
+            uniform vec3 uColor;
+            void main() { gl_FragColor = vec4(uColor, 1.0); }
+        `;
+        let progGrass = createProgram(vsGrass, fsGrass);
+
+        // --- Облака ---
+        let vsCloud = `
+            attribute vec3 aPos; attribute float aSize; attribute vec3 aOffset;
+            uniform mat4 uMVP; uniform float uTime;
+            varying float vAlpha;
+            void main() {
+                vec3 pos = aPos + aOffset + vec3(uTime*0.02, 0.0, 0.0);
+                gl_Position = uMVP * vec4(pos, 1.0);
+                gl_PointSize = aSize;
+                vAlpha = 0.9;
+            }
+        `;
+        let fsCloud = `
+            precision highp float;
+            uniform sampler2D uTex;
+            varying float vAlpha;
+            void main() {
+                vec2 uv = gl_PointCoord;
+                float a = texture2D(uTex, uv).a;
+                gl_FragColor = vec4(1.0, 1.0, 1.0, a * vAlpha);
+            }
+        `;
+        let progCloud = createProgram(vsCloud, fsCloud);
+
+        log('Все шейдеры скомпилированы');
+
+        // ============================================================
+        // 12. УПРАВЛЕНИЕ КАМЕРОЙ
+        // ============================================================
+        let camPos = new V3(8, 5, 15);
+        let camTarget = new V3(0, 0, 0);
+        let yaw = 0, pitch = -0.4, dist = 15;
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (e.buttons & 1) {
+                yaw += e.movementX * 0.006;
+                pitch += e.movementY * 0.006;
+                pitch = Math.max(-1.2, Math.min(0.1, pitch));
+            }
+        });
+        canvas.addEventListener('wheel', (e) => {
+            dist = Math.max(4, Math.min(30, dist - e.deltaY * 0.02));
+        });
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, canvas.width, canvas.height);
+        });
+
+        // ============================================================
+        // 13. ОСНОВНОЙ ЦИКЛ РЕНДЕРА
+        // ============================================================
+        let time = 0, lastTime = performance.now();
+        let frameCount = 0, fpsTimer = 0;
+
+        function render() {
+            try {
+                let now = performance.now();
+                time += (now - lastTime) * 0.001;
+                lastTime = now;
+                frameCount++;
+                if (now - fpsTimer > 1000) {
+                    fpsDiv.textContent = 'FPS: ' + frameCount;
+                    frameCount = 0;
+                    fpsTimer = now;
+                }
+
+                gl.clearColor(0.4, 0.65, 0.9, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                gl.enable(gl.DEPTH_TEST);
+
+                let aspect = canvas.width / canvas.height;
+                let proj = new M4().perspective(1.2, aspect, 0.1, 50);
+                let eye = new V3(Math.sin(yaw) * dist, Math.sin(pitch) * dist + 4, Math.cos(yaw) * dist);
+                camPos = eye.add(camTarget);
+                let view = M4.lookAt(camPos, camTarget, new V3(0, 1, 0));
+                let mvp = proj.mul(view);
+
+                let sunDir = new V3(0.5, -0.8, 0.3).norm();
+
+                // --- 1. Ландшафт ---
+                gl.useProgram(progTerrain);
+                gl.uniformMatrix4fv(gl.getUniformLocation(progTerrain, 'uMVP'), false, mvp.m);
+                gl.uniform3f(gl.getUniformLocation(progTerrain, 'uFogColor'), 0.5, 0.7, 0.9);
+                gl.uniform1f(gl.getUniformLocation(progTerrain, 'uFogDensity'), 0.04);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, texGrass);
+                gl.uniform1i(gl.getUniformLocation(progTerrain, 'uTex'), 0);
+
+                let l = gl.getAttribLocation(progTerrain, 'aPos');
+                gl.enableVertexAttribArray(l);
+                gl.bindBuffer(gl.ARRAY_BUFFER, terrVBO);
+                gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+
+                l = gl.getAttribLocation(progTerrain, 'aUV');
+                gl.enableVertexAttribArray(l);
+                gl.bindBuffer(gl.ARRAY_BUFFER, terrUVBO);
+                gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0);
+
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrIBO);
+                gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_SHORT, 0);
+
+                // --- 2. Вода ---
+                gl.useProgram(progWater);
+                gl.uniformMatrix4fv(gl.getUniformLocation(progWater, 'uMVP'), false, mvp.m);
+                gl.uniform1f(gl.getUniformLocation(progWater, 'uTime'), time);
+                gl.uniform3f(gl.getUniformLocation(progWater, 'uViewDir'), camPos.x - camTarget.x, camPos.y - camTarget.y, camPos.z - camTarget.z);
+                gl.uniform3f(gl.getUniformLocation(progWater, 'uSunDir'), sunDir.x, sunDir.y, sunDir.z);
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+                l = gl.getAttribLocation(progWater, 'aPos');
+                gl.enableVertexAttribArray(l);
+                gl.bindBuffer(gl.ARRAY_BUFFER, waterVBO);
+                gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, (wSeg + 1) * (wSeg + 1));
+                gl.disable(gl.BLEND);
+
+                // --- 3. Трава ---
+                if (extInst) {
+                    gl.useProgram(progGrass);
+                    gl.uniformMatrix4fv(gl.getUniformLocation(progGrass, 'uMVP'), false, mvp.m);
+                    gl.uniform1f(gl.getUniformLocation(progGrass, 'uTime'), time);
+                    gl.uniform3f(gl.getUniformLocation(progGrass, 'uWind'), Math.sin(time * 0.2) * 0.3, 0, Math.cos(time * 0.15) * 0.3);
+                    gl.uniform3f(gl.getUniformLocation(progGrass, 'uColor'), 0.2, 0.7, 0.15);
+
+                    l = gl.getAttribLocation(progGrass, 'aPos');
+                    gl.enableVertexAttribArray(l);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, gVBO);
+                    gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 16, 0);
+
+                    l = gl.getAttribLocation(progGrass, 'aRandom');
+                    gl.enableVertexAttribArray(l);
+                    gl.vertexAttribPointer(l, 4, gl.FLOAT, false, 16, 12);
+
+                    extInst.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, grassCount);
+                }
+
+                // --- 4. Облака ---
+                gl.useProgram(progCloud);
+                gl.uniformMatrix4fv(gl.getUniformLocation(progCloud, 'uMVP'), false, mvp.m);
+                gl.uniform1f(gl.getUniformLocation(progCloud, 'uTime'), time);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, texCloud);
+                gl.uniform1i(gl.getUniformLocation(progCloud, 'uTex'), 0);
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+                l = gl.getAttribLocation(progCloud, 'aPos');
+                gl.enableVertexAttribArray(l);
+                gl.bindBuffer(gl.ARRAY_BUFFER, cVBO);
+                gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+
+                l = gl.getAttribLocation(progCloud, 'aSize');
+                gl.enableVertexAttribArray(l);
+                gl.bindBuffer(gl.ARRAY_BUFFER, cSBO);
+                gl.vertexAttribPointer(l, 1, gl.FLOAT, false, 0, 0);
+
+                l = gl.getAttribLocation(progCloud, 'aOffset');
+                gl.enableVertexAttribArray(l);
+                gl.bindBuffer(gl.ARRAY_BUFFER, cOBO);
+                gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+
+                gl.drawArrays(gl.POINTS, 0, cloudCount);
+                gl.disable(gl.BLEND);
+
+                requestAnimationFrame(render);
+            } catch (e) {
+                log('Ошибка рендера: ' + e.message);
+            }
+        }
+
+        log('Запуск рендера...');
+        render();
+    </script>
+</body>
+</html>
