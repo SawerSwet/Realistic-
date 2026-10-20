@@ -68,21 +68,138 @@ canvas {
   transition:opacity 2s;
   pointer-events:none
 }
+#ov {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+#msg {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: calc(48px + env(safe-area-inset-top, 0px));
+  text-align: center;
+  color: #fff;
+  font: 600 18px system-ui, sans-serif;
+  text-shadow: 0 2px 6px #000;
+  opacity: 0;
+  transition: opacity .6s;
+  pointer-events: none;
+  z-index: 2;
+}
+#pn {
+  max-height: 55vh;
+  overflow: auto;
+}
+#pn select {
+  width: 100%;
+  margin-top: 3px;
+}
+#ui {
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  bottom: auto;
+}
+#pn {
+  max-height: 70vh;
+}
+#joy {
+  position: fixed;
+  left: calc(28px + env(safe-area-inset-left, 0px));
+  bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .12);
+  border: 2px solid rgba(255, 255, 255, .3);
+  z-index: 3;
+  touch-action: none;
+}
+#knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .45);
+  pointer-events: none;
+}
+#btns {
+  position: fixed;
+  right: calc(20px + env(safe-area-inset-right, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: 56px 56px;
+  gap: 12px;
+  z-index: 3;
+}
+#btns button {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, .35);
+  background: rgba(10, 20, 30, .45);
+  color: #fff;
+  font-size: 24px;
+  touch-action: none;
+  backdrop-filter: blur(4px);
+}
+#btns button.on {
+  background: rgba(255, 200, 60, .6);
+}
 </style></head><body>
 <canvas id="c"></canvas>
-<div id="hint">Свайп или мышь — осмотреться · W A S D — полёт</div>
+<canvas id="ov"></canvas>
+<div id="msg"></div>
+<div id="joy"><div id="knob"></div></div>
+<div id="btns">
+<button id="b_bell" aria-label="Звонок">🔔</button>
+<button id="b_lamp" aria-label="Фара">💡</button>
+<button id="b_run" aria-label="Ускорение">⚡</button>
+<button id="b_shot" aria-label="Скриншот">📷</button>
+</div>
+<div id="hint">Левый джойстик — ехать и рулить · свайп по экрану — смотреть · 🔔 💡 ⚡ 📷 справа</div>
+<div id="fpsv" style="position:fixed;right:10px;top:calc(10px + env(safe-area-inset-top,0px));color:#fff;font:12px system-ui;text-shadow:0 1px 3px #000;z-index:2"></div>
 <div id="ui"><button id="tg">⚙</button><div id="pn">
 <label>Время: <b id="hv"></b><input id="hr" type="range" min="0" max="24" step=".05" value="9.5"></label>
 <label><input type="checkbox" id="au" checked> Смена дня и ночи</label>
-<label>Скорость<input id="sp" type="range" min="0" max="60" value="12"></label>
+<label>Макс. скорость<input id="sp" type="range" min="0" max="60" value="36"></label>
+<label><input type="checkbox" id="apd"> Автопедали (без джойстика)</label>
+<label>Погода
+<select id="wx">
+<option value="clear">Ясно</option>
+<option value="rain">Дождь и гроза</option>
+</select></label>
 <label>Высота<input id="al" type="range" min="3" max="120" value="14"></label>
 <label><input type="checkbox" id="mq"> Максимальное качество</label>
-<label><input type="checkbox" id="k4"> 4K (очень тяжело)</label>
+<label>Качество картинки
+<select id="ql">
+<option value="auto">Авто (по FPS)</option>
+<option value="720">720p</option>
+<option value="1080">1080p (Full HD)</option>
+<option value="1440">1440p (2K)</option>
+<option value="2160">2160p (4K, очень тяжело)</option>
+</select></label>
+<label>Режим
+<select id="md">
+<option value="ride">Велосипед и каяк</option>
+<option value="fly">Полёт</option>
+</select></label>
+<label><input type="checkbox" id="snd" checked> Звук</label>
+<label>Громкость<input id="vol" type="range" min="0" max="1" step=".05" value=".6"></label>
+<label><input type="checkbox" id="o_bd" checked> Птицы</label>
 <hr>
-<label><input type="checkbox" id="o_sh" checked> Тени</label>
+<label><input type="checkbox" id="lo" checked> Режим слабого телефона</label>
+<label><input type="checkbox" id="ad" checked> Авто-снижение эффектов</label>
+<label><input type="checkbox" id="o_sh"> Тени</label>
 <label><input type="checkbox" id="o_tr" checked> Деревья</label>
 <label><input type="checkbox" id="o_gr" checked> Объёмная трава</label>
 <label><input type="checkbox" id="o_rf" checked> Облака в отражении воды</label>
+<label><input type="checkbox" id="fps30"> Лимит 30 FPS (экономия батареи)</label>
 </div></div>
 <script>
 const FS=`#version 300 es
@@ -90,6 +207,8 @@ precision highp float;
 precision highp int;
 uniform vec2 uRes, uWind;
 uniform sampler2D uSand, uPeb, uGrass, uRock;
+uniform float uRain, uLamp, uFoc; // rain amount 0..1, bike headlight on/off, focal length (field of view)
+uniform float uLow; // 1 = weak-device mode: fewer steps, shorter view, 1 grass layer, 1 cloud layer
 uniform vec4 uOpt; // x: shadows, y: trees, z: volumetric grass, w: clouds in water reflection
 uniform float uTime;
 uniform vec3 uCam, uF, uR, uU, uSun;
@@ -128,6 +247,7 @@ float nz(vec2 p) {
 float fbm(vec2 p) {
   float a=.5, s=0.;
   for(int i=0; i<5; i++) {
+    if(i>=3&&uLow>.5)break;
     s+=a*nz(p);
     p=R2*p*2.02;
     a*=.5;
@@ -144,6 +264,7 @@ float H(vec2 p) {
     a*=.5;
   }
   h=(h-.469)*80.+7.;
+  if(h>=22.)return h; // river carving has no effect up here
   float r=abs(nz(p*.0025+vec2(31., 7.))-.5);
   float rw=(1.-ss(0., .035, r))*(1.-ss(8., 22., h));
   return min(h, mix(h, -3., rw));
@@ -155,7 +276,7 @@ bool grassIn(vec2 xz, float hh, float g, float t) {
   if(gm<.03)return false;
   float gust=nz(xz*.07-uWind*uTime*1.6);
   vec2 off=uWind*(.15+.85*gust)*hh*.55+.05*hh*vec2(sin(uTime*2.3+xz.y*.9), cos(uTime*2.+xz.x*.8));
-  int layers=t<14.?3:(t<32.?2:1); // fewer grass layers with distance
+  int layers=uLow>.5?1:(t<14.?3:(t<32.?2:1)); // fewer grass layers with distance
   for(int k=0; k<3; k++) {
     if(k>=layers)break;
     vec2 q=(xz+off)*(k==0?2.6:(k==1?3.3:4.1))+(k==0?vec2(0.):(k==1?vec2(2.59, 4.27):vec2(5.1, 1.7)));
@@ -206,8 +327,8 @@ float treeD(vec3 p) {
   float de=min(ed.x, ed.y)+1.;
   if(ii!=tCid) {
     tCid=ii;
-    float dens=ss(.3, .62, nz(id*.28+3.7));
-    tOk=hs(ii+ivec2(3, 71))<=dens*.85+.04;
+    float dens=ss(.52, .8, nz(id*.22+3.7)); // groves only where the patch noise is high
+    tOk=hs(ii+ivec2(3, 71))<=dens*.6+.008; // a few lone trees, denser inside groves
     if(tOk) {
       tC=(id+.5+(vec2(hs(ii+ivec2(5, 9)), hs(ii+ivec2(13, 2)))-.5)*.3)*16.;
       tTy=H(tC);
@@ -288,12 +409,15 @@ vec4 clouds(vec3 rd) {
   float sd=max(dot(rd, uSun), 0.);
   vec2 sdir=uSun.xz/max(uSun.y, .25)*.035;
   for(int l=0; l<2; l++) {
+    if(l>0&&uLow>.5)break;
     float fl=float(l);
     float t=(750.+fl*450.-uCam.y)/rd.y;
     vec2 uv=(uCam.xz+rd.xz*t)*.00065+vec2(.7, .3)*uTime*.012*(1.+fl*.5)+fl*17.3;
-    float cd=fbm(uv), c2=fbm(uv+sdir);
-    float d=ss(.48, .66, cd);
+    float cd=fbm(uv);
+    float d=ss(.48-.25*uRain, .66-.12*uRain, cd);
     float a=d*ss(.01, .14, rd.y);
+    if(a<.003)continue; // clear sky: skip the light sample and colour work
+    float c2=fbm(uv+sdir);
     float sh=clamp(.55+(cd-c2)*10., 0., 1.);
     vec3 lit=sunCol*.34+ambCol*.9, dk=ambCol*.5+.01;
     vec3 cc=mix(dk, lit, sh)+sunCol*.3*pow(sd, 6.)*(1.-d);
@@ -320,16 +444,19 @@ vec3 sky(vec3 rd) {
 }
 
 // ---- water
-float wv(vec2 q) {
+float wv(vec2 q, bool hi) { // hi: include fine ripples (skipped far away)
   float t=uTime;
-  return .18*sin(dot(q, vec2(.31, .21))+t*1.1)+.12*sin(dot(q, vec2(-.22, .41))+t*1.4)+.07*sin(dot(q, vec2(.9, -.5))+t*2.1)+.04*sin(dot(q, vec2(-.7, -1.1))+t*2.7)+.1*nz(q*.9+vec2(t*.5, t*.3))+.03*nz(q*3.+vec2(t*.8, -t*.6))+.015*nz(q*7.-vec2(t, t*.7));
+  float w=.18*sin(dot(q, vec2(.31, .21))+t*1.1)+.12*sin(dot(q, vec2(-.22, .41))+t*1.4)+.07*sin(dot(q, vec2(.9, -.5))+t*2.1)+.04*sin(dot(q, vec2(-.7, -1.1))+t*2.7);
+  if(hi)w+=.1*nz(q*.9+vec2(t*.5, t*.3))+.03*nz(q*3.+vec2(t*.8, -t*.6))+.015*nz(q*7.-vec2(t, t*.7));
+  return w;
 }
 
 vec3 water(vec3 p, vec3 rd, float t) {
   vec2 q=p.xz;
   float e=.12;
-  float h0=wv(q);
-  vec3 n=normalize(vec3((h0-wv(q+vec2(e, 0)))/e*2.2, 1., (h0-wv(q+vec2(0, e)))/e*2.2));
+  bool hi=t<(uLow>.5?60.:220.);
+  float h0=wv(q, hi);
+  vec3 n=normalize(vec3((h0-wv(q+vec2(e, 0), hi))/e*2.2, 1., (h0-wv(q+vec2(0, e), hi))/e*2.2));
   n=normalize(mix(n, vec3(0, 1, 0), ss(60., 500., t)));
   vec3 rf=reflect(rd, n);
   rf.y=abs(rf.y)+.01;
@@ -351,7 +478,7 @@ vec3 water(vec3 p, vec3 rd, float t) {
 
 void main() {
   vec2 uv=(gl_FragCoord.xy-.5*uRes)/uRes.y;
-  vec3 rd=normalize(uF*1.3+uR*uv.x+uU*uv.y), ro=uCam;
+  vec3 rd=normalize(uF*uFoc+uR*uv.x+uU*uv.y), ro=uCam;
   sunE=uSun.y;
   dayf=ss(-.08, .25, sunE);
   float moon=ss(-.08, -.25, sunE)*.22;
@@ -360,11 +487,17 @@ void main() {
   ambCol=mix(vec3(.012, .018, .04), vec3(.3, .42, .68), dayf);
   horC=mix(mix(vec3(.01, .015, .035), vec3(1., .5, .28), ss(-.12, 0., sunE)), vec3(.68, .82, .95), ss(0., .4, sunE));
   zenC=mix(vec3(.004, .008, .025), mix(vec3(.1, .14, .3), vec3(.01, .08, .62), ss(0., .4, sunE)), ss(-.15, .05, sunE));
+  // rain: dim sun, grey sky, thicker clouds
+  sunCol*=1.-.85*uRain;
+  ambCol=mix(ambCol, vec3(dot(ambCol, vec3(.33)))*.9, .6*uRain);
+  horC=mix(horC, vec3(.42, .46, .5)*(.15+.85*dayf), uRain);
+  zenC=mix(zenC, vec3(.2, .23, .28)*(.1+.9*dayf), uRain);
   float tw=rd.y<-.0005?-ro.y/rd.y:1e9;
-  float tmax=750.;
+  float tmax=uLow>.5?450.:750.;
   float t=.05+.05*hs(ivec2(gl_FragCoord.xy));
   int hit=-1;
   for(int i=0; i<130; i++) {
+    if(uLow>.5&&i>70)break;
     if(t>=tw) {
       hit=4;
       t=tw;
@@ -372,11 +505,15 @@ void main() {
     }
     if(t>tmax)break;
     vec3 p=ro+rd*t;
+    if(rd.y>0.&&p.y>75.) {
+      t=tmax; // above all terrain and trees: nothing left to hit
+      break;
+    }
     float g=H(p.xz);
     float hh=p.y-g;
     float lim=(t<55.&&uOpt.z>.5)?hh-1.25:hh;
-    float dt=max(lim, 0.)*.5;
-    if(uOpt.y>.5&&hh<17.&&t<380.) {
+    float dt=max(lim, 0.)*(t<120.?.5:.7);
+    if(uOpt.y>.5&&hh<17.&&t<(uLow>.5?150.:380.)) {
       float td=treeD(p);
       if(td<.03+.0007*t) {
         hit=gLeaf?3:2;
@@ -426,6 +563,7 @@ void main() {
         alb=mix(mix(gc, rc, rock), sc, sand*(1.-rock));
         // fine detail, faded with distance to avoid shimmering
         float lod=1.-ss(30., 140., t);
+        if(uLow<.5&&lod>0.) {
         n=normalize(n+rock*lod*vec3(nz(p.xz*2.+7.)-.5, 0., nz(p.xz*2.)-.5)*.9);
         float grain=nz(p.xz*14.)*.5+nz(p.xz*40.)*.5;
         alb*=1.+(grain-.5)*.35*lod*(sand+rock);
@@ -434,11 +572,15 @@ void main() {
         vec3 pebC=textureLod(uPeb, p.xz*.5, lodFor(t, .5)).rgb*(.8+.4*ph);
         float pebW=sand*ss(.45,.7,nz(p.xz*.8+3.))*(1.-ss(.9,2.,g))*lod;
         alb=mix(alb, pebC, pebW*.85);
+        }
         if(hit==1) {
           float gw=nz(p.xz*.05-uWind*uTime*1.2);
           alb=mix(vec3(.01, .07, .01), vec3(.3, .62, .06)*(.8+.5*gTint), pow(gS, .8))*(.55+.9*gw);
           alb=mix(alb, vec3(.75, .8, .15)*gS*gS, .35*ss(.6, .9, gw));
           alb=mix(alb, alb*vec3(1.6, 1.3, .6), .5*dry);
+          // wildflowers: a few tall tufts carry white or yellow blossoms near their tips
+          float fl=step(.945, gTint)*ss(.55, .7, gS);
+          alb=mix(alb, mix(vec3(.95, .95, .88), vec3(.95, .78, .1), step(.975, gTint)), fl*.9);
           ao=.25+.75*gS;
         alb*=.6+.8*dot(textureLod(uGrass, p.xz*1.2, lodFor(t, 1.2)).rgb, vec3(.333));
           n=normalize(mix(n, normalize(vec3(gD.x*1.6, 1., gD.y*1.6)), .65));
@@ -462,13 +604,22 @@ void main() {
           ao=.7;
         }
       }
+      alb*=1.-.3*uRain; // wet surfaces are darker
       float ndl=clamp((dot(n, L)+w)/(1.+w), 0., 1.);
       float sh=1.;
-      if(uOpt.x>.5&&sunCol.x+sunCol.y>.01&&t<350.)sh=shadow(p+n*.1, L);
+      if(uOpt.x>.5&&ndl>.001&&sunCol.x+sunCol.y>.01&&t<350.)sh=shadow(p+n*.1, L);
       col=alb*(sunCol*ndl*sh+ambCol*(.55+.45*n.y)*ao);
       col+=alb*sunCol*sh*pow(max(dot(rd, L), 0.), 4.)*.25*bl;
+      if(uLamp>.5) {
+        // bicycle headlight: a warm cone along the view direction
+        vec3 lv=p-ro;
+        float ld=length(lv);
+        vec3 ldir=lv/max(ld, .001);
+        float cone=ss(.82, .96, dot(ldir, uF));
+        col+=alb*vec3(1., .92, .75)*cone*max(dot(n, -ldir), 0.)*6./(1.+ld*ld*.012);
+      }
     }
-    float f=1.-exp(-pow(t/450., 1.6));
+    float f=1.-exp(-pow(t/(450.-260.*uRain), 1.6));
     col=mix(col, skyBase(normalize(vec3(rd.x, min(rd.y, .12), rd.z))), f);
   }
   col*=1.15;
@@ -530,7 +681,7 @@ function H(x, z) {
 
 const cv=document.getElementById('c');
 const gl=cv.getContext('webgl2', {
-  antialias:false, powerPreference:'high-performance'
+  antialias:false, alpha:false, desynchronized:true, powerPreference:'high-performance'
 });
 if(!gl) {
   document.body.innerHTML='<p style="color:#fff;padding:20px">Для работы нужен WebGL2.</p>'
@@ -549,7 +700,7 @@ if(!gl) {
   gl.useProgram(pg);
   const U= {
   };
-  ['uRes', 'uWind', 'uTime', 'uCam', 'uF', 'uR', 'uU', 'uSun', 'uSand', 'uPeb', 'uGrass', 'uRock', 'uOpt'].forEach(n=>U[n]=gl.getUniformLocation(pg, n));
+  ['uRes', 'uWind', 'uTime', 'uCam', 'uF', 'uR', 'uU', 'uSun', 'uSand', 'uPeb', 'uGrass', 'uRock', 'uOpt', 'uLow', 'uRain', 'uLamp', 'uFoc'].forEach(n=>U[n]=gl.getUniformLocation(pg, n));
 // Textures cut from the supplied photos (sand, pebbles, grass, rock), mirror-tiled so they repeat seamlessly
 const TEX_DATA = [
   "data:image/jpeg;base64,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",
@@ -580,7 +731,7 @@ TEX_DATA.forEach((src, unit) => {
   const cam= {
     x:0, z:0, y:40, yaw:.6, pitch:-.15
   };
-  let time=0, hour=9.5, maxScale=Math.min(window.devicePixelRatio||1, 2), scale=maxScale*.7, ft=16, fc=0;
+  let time=0, hour=9.5, maxScale=Math.min(window.devicePixelRatio||1, 2), scale=maxScale*.4, ft=16, fc=0, frameMin=16;
   const keys= {
   };
   addEventListener('keydown', e=>keys[e.code]=1);
@@ -616,19 +767,610 @@ TEX_DATA.forEach((src, unit) => {
     return a.map(v=>v/l)
   }
   let last=performance.now();
+  // ================= rider state: bicycle on land, kayak on water =================
+  const ride = { mode: 'bike', speed: 0, ph: 0, pad: 0, pOff: 0, steer: 0, lastYaw: cam.yaw, lastPad: 0, stam: 1, sprintHeld: false };
+  function waveH(x, z, t) {
+    // same low-frequency waves as the water shader, used to rock the kayak
+    return .18*Math.sin(x*.31+z*.21+t*1.1)+.12*Math.sin(-x*.22+z*.41+t*1.4)+.07*Math.sin(x*.9-z*.5+t*2.1)+.04*Math.sin(-x*.7-z*1.1+t*2.7);
+  }
+  let msgTimer = 0;
+  let foc = 1.3, rainLevel = 0, flash = 0, thunderT = 12, shot = false, lampState = 0, lampOn = false, btnRun = false;
+  function showMsg(text) {
+    const el = $('msg');
+    el.textContent = text;
+    el.style.opacity = 1;
+    msgTimer = 4;
+  }
+
+  // ================= sound (Web Audio, everything synthesised) =================
+  const sfx = { ctx: null, master: null, birdT: 2, white: null };
+  function noiseBuffer(ctx, brown) {
+    const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+    let last = 0;
+    for(let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      if(brown) {
+        last = (last + .02 * w) / 1.02;
+        d[i] = last * 3.5;
+      } else d[i] = w;
+    }
+    return buf;
+  }
+  function noiseLoop(ctx, buf, type, freq, q) {
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    src.connect(f);
+    f.connect(g);
+    g.connect(sfx.master);
+    src.start();
+    return { f: f, g: g };
+  }
+  function initAudio() {
+    if(sfx.ctx) {
+      if(sfx.ctx.state === 'suspended')sfx.ctx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC)return;
+    const ctx = new AC();
+    sfx.ctx = ctx;
+    sfx.master = ctx.createGain();
+    sfx.master.gain.value = 0;
+    sfx.master.connect(ctx.destination);
+    const brown = noiseBuffer(ctx, true);
+    sfx.white = noiseBuffer(ctx, false);
+    sfx.wind = noiseLoop(ctx, brown, 'lowpass', 500, .7);
+    sfx.water = noiseLoop(ctx, sfx.white, 'bandpass', 700, .6);
+    sfx.grass = noiseLoop(ctx, sfx.white, 'highpass', 3500, .5);
+    sfx.tire = noiseLoop(ctx, brown, 'lowpass', 250, .5);
+    sfx.rain = noiseLoop(ctx, sfx.white, 'bandpass', 3200, .35);
+    sfx.brown = brown;
+    // night crickets: a high tone chopped on and off by a square LFO
+    const carrier = ctx.createOscillator();
+    carrier.frequency.value = 4400;
+    const amp = ctx.createGain();
+    amp.gain.value = .5;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 16;
+    const depth = ctx.createGain();
+    depth.gain.value = .5;
+    const level = ctx.createGain();
+    level.gain.value = 0;
+    lfo.connect(depth);
+    depth.connect(amp.gain);
+    carrier.connect(amp);
+    amp.connect(level);
+    level.connect(sfx.master);
+    carrier.start();
+    lfo.start();
+    sfx.cricket = level;
+  }
+  function chirp() {
+    // a short bird phrase: a few rising or falling notes at a random pitch and stereo position
+    const ctx = sfx.ctx;
+    if(!ctx)return;
+    const t0 = ctx.currentTime + .02;
+    const notes = 2 + Math.floor(Math.random() * 5);
+    const base = 1800 + Math.random() * 3400;
+    const vol = .02 + Math.random() * .06;
+    const o = ctx.createOscillator();
+    o.type = Math.random() < .7 ? 'sine' : 'triangle';
+    const g = ctx.createGain();
+    g.gain.value = 0;
+    o.connect(g);
+    if(ctx.createStereoPanner) {
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = Math.random() * 2 - 1;
+      g.connect(pan);
+      pan.connect(sfx.master);
+    } else g.connect(sfx.master);
+    let t = t0;
+    for(let i = 0; i < notes; i++) {
+      const dur = .05 + Math.random() * .09;
+      const f0 = base * (1 + Math.random() * .3), f1 = f0 * (Math.random() < .5 ? 1.4 : .7);
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + .01);
+      g.gain.linearRampToValueAtTime(0, t + dur);
+      t += dur + .04 + Math.random() * .06;
+    }
+    o.start(t0);
+    o.stop(t + .1);
+  }
+  function splash(strength) {
+    const ctx = sfx.ctx;
+    if(!ctx||!$('snd').checked)return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = sfx.white;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(2500, t);
+    f.frequency.exponentialRampToValueAtTime(300, t + .4);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(.2 * strength, t);
+    g.gain.exponentialRampToValueAtTime(.001, t + .45);
+    src.connect(f);
+    f.connect(g);
+    g.connect(sfx.master);
+    src.start(t, Math.random(), .5);
+  }
+  function bell() {
+    const ctx = sfx.ctx;
+    if(!ctx||!$('snd').checked)return;
+    const t = ctx.currentTime;
+    for(const f of [2200, 3300]) {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f;
+      g.gain.setValueAtTime(.12, t);
+      g.gain.exponentialRampToValueAtTime(.001, t + 1.2);
+      o.connect(g);
+      g.connect(sfx.master);
+      o.start(t);
+      o.stop(t + 1.3);
+    }
+  }
+  function thunder(delay) {
+    const ctx = sfx.ctx;
+    if(!ctx||!$('snd').checked)return;
+    const t = ctx.currentTime + delay;
+    const src = ctx.createBufferSource();
+    src.buffer = sfx.brown;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(220, t);
+    f.frequency.exponentialRampToValueAtTime(60, t + 2.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(.9, t + .15);
+    g.gain.exponentialRampToValueAtTime(.001, t + 3);
+    src.connect(f);
+    f.connect(g);
+    g.connect(sfx.master);
+    src.start(t, Math.random());
+    src.stop(t + 3.2);
+  }
+  function updateAudio(dt, str, wn, sunE) {
+    const ctx = sfx.ctx;
+    if(!ctx)return;
+    const t = ctx.currentTime, on = $('snd').checked;
+    sfx.master.gain.setTargetAtTime(on ? +$('vol').value : 0, t, .1);
+    if(!on)return;
+    const rideMode = $('md').value !== 'fly';
+    const kayak = rideMode && ride.mode === 'kayak', bike = rideMode && ride.mode === 'bike';
+    const gust = .5 + .5 * Math.sin(time * .6) * Math.sin(time * .23 + 1);
+    sfx.wind.g.gain.setTargetAtTime((.04 + .16 * str * (.6 + .4 * gust)) * (kayak ? 1.4 : 1), t, .3);
+    sfx.wind.f.frequency.setTargetAtTime(250 + 500 * str + 250 * gust, t, .3);
+    sfx.water.g.gain.setTargetAtTime((kayak ? .09 : wn * .05) * (.7 + .3 * Math.sin(time * 1.7)), t, .4);
+    const sp = Math.min(1, ride.speed / 10);
+    sfx.grass.g.gain.setTargetAtTime(bike ? sp * .035 : 0, t, .2);
+    sfx.tire.g.gain.setTargetAtTime(bike ? sp * .06 : 0, t, .2);
+    sfx.rain.g.gain.setTargetAtTime(rainLevel * .14, t, .5);
+    const night = Math.max(0, Math.min(1, (.1 - sunE) / .25));
+    sfx.cricket.gain.setTargetAtTime(night * .012, t, .5);
+    sfx.birdT -= dt;
+    if(sfx.birdT <= 0) {
+      if(sunE > .05&&$('o_bd').checked&&rainLevel < .3) {
+        chirp();
+        sfx.birdT = .6 + Math.random() * 3.5;
+      } else sfx.birdT = 2;
+    }
+  }
+  ['pointerdown', 'keydown'].forEach(n=>addEventListener(n, ()=> {
+    if($('snd').checked)initAudio();
+  }));
+  $('snd').addEventListener('change', ()=> {
+    if($('snd').checked)initAudio();
+  });
+
+  // ================= movement of the bicycle / kayak =================
+  function rideStep(dt, fx, fz, keyF, keyS, windX, windZ) {
+    const ground = H(cam.x, cam.z);
+    if(ride.mode === 'bike'&&ground < -.3) {
+      ride.mode = 'kayak';
+      showMsg('Вы пересели на каяк');
+      splash(1);
+    } else if(ride.mode === 'kayak'&&ground > .15) {
+      ride.mode = 'bike';
+      showMsg('Вы пересели на велосипед');
+    }
+    cam.yaw += keyS * dt * 1.4;
+    // sprint costs stamina, stamina slowly comes back
+    if(ride.sprintHeld&&ride.stam > 0&&ride.speed > .5)ride.stam = Math.max(0, ride.stam - dt * .22);
+    else ride.stam = Math.min(1, ride.stam + dt * .1);
+    const sprint = ride.sprintHeld&&ride.stam > 0;
+    const slider = (+$('sp').value) / 60;
+    const throttle = $('apd').checked ? .6 + .4 * Math.max(keyF, 0) : Math.max(keyF, 0);
+    let target;
+    if(ride.mode === 'bike') {
+      const slope = (H(cam.x+fx*4, cam.z+fz*4) - ground) / 4;
+      target = slider * 14 * throttle * (sprint ? 1.6 : 1) * Math.min(1.3, Math.max(.25, 1 - slope * 2.2));
+    } else {
+      target = slider * 5 * throttle * (sprint ? 1.5 : 1);
+    }
+    const braking = keyF < -.1;
+    if(braking)target = 0;
+    ride.speed += (target - ride.speed) * Math.min(1, dt * (braking ? 3 : 1.5));
+    let vx = fx * ride.speed, vz = fz * ride.speed;
+    if(ride.mode === 'kayak') {
+      // the waves carry the kayak downwind even when you stop paddling
+      vx += windX * 1.1;
+      vz += windZ * 1.1;
+    }
+    cam.x += vx * dt;
+    cam.z += vz * dt;
+    const g2 = Math.max(H(cam.x, cam.z), 0);
+    ride.ph += ride.speed * dt * 1.3;
+    let eye;
+    if(ride.mode === 'bike') {
+      const k = Math.min(1, ride.speed / 5);
+      eye = g2 + 1.55 + Math.sin(ride.ph) * .035 * k;
+      ride.pOff = Math.sin(ride.ph * 2) * .006 * k;
+    } else {
+      eye = .65 + waveH(cam.x, cam.z, time) * .7;
+      ride.pOff = (waveH(cam.x+fx*2, cam.z+fz*2, time) - waveH(cam.x, cam.z, time)) * .3;
+      ride.pad += dt * (1.2 + ride.speed * .8);
+      const sn = Math.sin(ride.pad * 2.2);
+      if(sn * ride.lastPad < 0&&ride.speed > .3)splash(.5);
+      ride.lastPad = sn;
+    }
+    cam.y += (eye - cam.y) * Math.min(1, dt * 10);
+    if(cam.y < g2 + .5)cam.y = g2 + .5;
+  }
+
+  // ================= 2D overlay: birds, handlebars, kayak and paddle =================
+  const ov = document.getElementById('ov'), octx = ov.getContext('2d');
+  const birds = [];
+  for(let i = 0; i < 9; i++) {
+    birds.push({ a: Math.random() * 6.28, r: 40 + Math.random() * 120, sp: .15 + Math.random() * .25, yo: 18 + Math.random() * 45, cx: 0, cz: 0, ph: Math.random() * 6.28, init: false });
+  }
+  function drawBirds(dt, W, Hh, F, R, Uv, sunE) {
+    if(sunE < .02||!$('o_bd').checked)return;
+    for(const b of birds) {
+      if(!b.init||Math.hypot(b.cx - cam.x, b.cz - cam.z) > 320) {
+        const a = Math.random() * 6.28, d = 80 + Math.random() * 180;
+        b.cx = cam.x + Math.sin(a) * d + F[0] * 100;
+        b.cz = cam.z + Math.cos(a) * d + F[2] * 100;
+        b.init = true;
+      }
+      b.a += b.sp * dt;
+      const x = b.cx + Math.cos(b.a) * b.r, z = b.cz + Math.sin(b.a) * b.r, y = cam.y + b.yo + Math.sin(b.a * 2) * 4;
+      const vx = x - cam.x, vy = y - cam.y, vz = z - cam.z;
+      const zc = vx * F[0] + vy * F[1] + vz * F[2];
+      if(zc < 2)continue;
+      const xc = vx * R[0] + vy * R[1] + vz * R[2], yc = vx * Uv[0] + vy * Uv[1] + vz * Uv[2];
+      const sx = W / 2 + foc * xc / zc * Hh, sy = Hh / 2 - foc * yc / zc * Hh;
+      if(sx < -50||sx > W + 50||sy < -50||sy > Hh + 50)continue;
+      const s = Math.max(2.5, .9 / zc * foc * Hh);
+      const flap = Math.sin(time * 9 + b.ph) * (Math.sin(time * .7 + b.ph) > 0 ? 1 : .15);
+      octx.strokeStyle = 'rgba(25,28,32,' + (zc > 250 ? .5 : .85) + ')';
+      octx.lineWidth = Math.max(1, s * .18);
+      octx.lineCap = 'round';
+      octx.beginPath();
+      octx.moveTo(sx - s, sy - flap * s * .55);
+      octx.quadraticCurveTo(sx - s * .45, sy - flap * s * .2 - s * .18, sx, sy);
+      octx.quadraticCurveTo(sx + s * .45, sy - flap * s * .2 - s * .18, sx + s, sy - flap * s * .55);
+      octx.stroke();
+    }
+  }
+  function drawBike(W, Hh) {
+    const k = Hh / 720, half = Math.min(W * .32, 300 * k);
+    const bob = Math.sin(ride.ph) * 3 * Math.min(1, ride.speed / 5) * k;
+    octx.save();
+    octx.translate(W / 2, Hh + bob);
+    octx.rotate(ride.steer * .12);
+    octx.lineCap = 'round';
+    // front tyre and rim (top arc only)
+    octx.strokeStyle = '#111';
+    octx.lineWidth = 16 * k;
+    octx.beginPath();
+    octx.arc(0, 150 * k, 175 * k, Math.PI * 1.18, Math.PI * 1.82);
+    octx.stroke();
+    octx.strokeStyle = '#8a8d90';
+    octx.lineWidth = 4 * k;
+    octx.beginPath();
+    octx.arc(0, 150 * k, 158 * k, Math.PI * 1.18, Math.PI * 1.82);
+    octx.stroke();
+    // stem
+    octx.strokeStyle = '#222';
+    octx.lineWidth = 22 * k;
+    octx.beginPath();
+    octx.moveTo(0, -85 * k);
+    octx.lineTo(0, 15 * k);
+    octx.stroke();
+    // bar
+    octx.strokeStyle = '#1b1b1b';
+    octx.lineWidth = 12 * k;
+    octx.beginPath();
+    octx.moveTo(-half, -60 * k);
+    octx.quadraticCurveTo(0, -110 * k, half, -60 * k);
+    octx.stroke();
+    // grips
+    octx.strokeStyle = '#0b0b0b';
+    octx.lineWidth = 26 * k;
+    for(const sgn of [-1, 1]) {
+      octx.beginPath();
+      octx.moveTo(sgn * half, -60 * k);
+      octx.lineTo(sgn * (half + 70 * k), -52 * k);
+      octx.stroke();
+    }
+    // brake levers
+    octx.strokeStyle = '#b9bcc0';
+    octx.lineWidth = 5 * k;
+    for(const sgn of [-1, 1]) {
+      octx.beginPath();
+      octx.moveTo(sgn * (half + 10 * k), -72 * k);
+      octx.lineTo(sgn * (half - 70 * k), -62 * k);
+      octx.stroke();
+    }
+    // bell
+    octx.fillStyle = '#c8ccd0';
+    octx.beginPath();
+    octx.arc(-half * .35, -94 * k, 11 * k, 0, 6.28);
+    octx.fill();
+    // gloves on the grips
+    octx.fillStyle = '#2b2f36';
+    for(const sgn of [-1, 1]) {
+      octx.beginPath();
+      octx.ellipse(sgn * (half + 30 * k), -62 * k, 42 * k, 24 * k, sgn * .15, 0, 6.28);
+      octx.fill();
+    }
+    // headlight on the bar
+    if(lampOn) {
+      const gl2 = octx.createRadialGradient(half * .35, -96 * k, 2 * k, half * .35, -96 * k, 60 * k);
+      gl2.addColorStop(0, 'rgba(255,246,208,.95)');
+      gl2.addColorStop(1, 'rgba(255,246,208,0)');
+      octx.fillStyle = gl2;
+      octx.beginPath();
+      octx.arc(half * .35, -96 * k, 60 * k, 0, 6.28);
+      octx.fill();
+    }
+    octx.restore();
+  }
+  function drawKayak(W, Hh) {
+    const k = Hh / 720;
+    const sway = Math.sin(time * 1.3) * 3 * k + ride.pOff * 400 * k;
+    octx.save();
+    octx.translate(W / 2, Hh + sway);
+    octx.rotate(Math.sin(time * 1.1) * .01 + ride.steer * .05);
+    const bw = Math.min(W * .3, 280 * k), bh = 230 * k;
+    const grad = octx.createLinearGradient(0, -bh, 0, 0);
+    grad.addColorStop(0, '#ff9a1f');
+    grad.addColorStop(1, '#d9560b');
+    octx.fillStyle = grad;
+    octx.beginPath();
+    octx.moveTo(0, -bh);
+    octx.bezierCurveTo(bw * .55, -bh * .7, bw * .95, -bh * .25, bw, 20 * k);
+    octx.lineTo(-bw, 20 * k);
+    octx.bezierCurveTo(-bw * .95, -bh * .25, -bw * .55, -bh * .7, 0, -bh);
+    octx.fill();
+    octx.strokeStyle = 'rgba(0,0,0,.35)';
+    octx.lineWidth = 4 * k;
+    octx.beginPath();
+    octx.moveTo(0, -bh);
+    octx.lineTo(0, 20 * k);
+    octx.stroke();
+    // double-blade paddle, blades dip alternately
+    const stroke = Math.sin(ride.pad * 2.2);
+    octx.save();
+    octx.translate(0, -70 * k);
+    octx.rotate(stroke * .35);
+    const len = Math.min(W * .4, 380 * k);
+    octx.strokeStyle = '#222';
+    octx.lineWidth = 9 * k;
+    octx.lineCap = 'round';
+    octx.beginPath();
+    octx.moveTo(-len, 0);
+    octx.lineTo(len, 0);
+    octx.stroke();
+    octx.fillStyle = '#1d6fa5';
+    octx.beginPath();
+    octx.ellipse(-len, 8 * k, 26 * k, 55 * k, -.2, 0, 6.28);
+    octx.fill();
+    octx.beginPath();
+    octx.ellipse(len, -8 * k, 26 * k, 55 * k, .2, 0, 6.28);
+    octx.fill();
+    octx.restore();
+    octx.restore();
+  }
+  function project(x, y, z, F, R, Uv, W, Hh) {
+    const vx = x - cam.x, vy = y - cam.y, vz = z - cam.z;
+    const zc = vx * F[0] + vy * F[1] + vz * F[2];
+    if(zc < .5)return null;
+    const xc = vx * R[0] + vy * R[1] + vz * R[2], yc = vx * Uv[0] + vy * Uv[1] + vz * Uv[2];
+    return [W / 2 + foc * xc / zc * Hh, Hh / 2 - foc * yc / zc * Hh, zc];
+  }
+  const flies = [];
+  for(let i = 0; i < 7; i++)flies.push({ x: 0, z: 0, ph: Math.random() * 6.28, hue: Math.random() < .5 ? '#f08a1c' : '#f4f1e6', init: false });
+  function drawButterflies(dt, W, Hh, F, R, Uv, sunE) {
+    if(sunE < .1||rainLevel > .2||$('md').value === 'fly'||ride.mode !== 'bike')return;
+    for(const b of flies) {
+      if(!b.init||Math.hypot(b.x - cam.x, b.z - cam.z) > 40) {
+        const a = Math.random() * 6.28, d = 8 + Math.random() * 22;
+        b.x = cam.x + F[0] * 12 + Math.sin(a) * d;
+        b.z = cam.z + F[2] * 12 + Math.cos(a) * d;
+        b.init = true;
+      }
+      b.ph += dt * 3;
+      b.x += Math.sin(b.ph * .7) * dt * 1.5;
+      b.z += Math.cos(b.ph * .5) * dt * 1.5;
+      const y = Math.max(H(b.x, b.z), 0) + 1.1 + Math.sin(b.ph * 1.3) * .4;
+      const pr = project(b.x, y, b.z, F, R, Uv, W, Hh);
+      if(!pr||pr[0] < -20||pr[0] > W + 20||pr[1] < -20||pr[1] > Hh + 20)continue;
+      const sz = Math.max(2, .12 / pr[2] * foc * Hh), w = Math.abs(Math.sin(time * 18 + b.ph * 5));
+      octx.fillStyle = b.hue;
+      for(const sgn of [-1, 1]) {
+        octx.beginPath();
+        octx.ellipse(pr[0] + sgn * sz * .55 * w, pr[1], sz * .6 * w + .5, sz * .8, sgn * .4, 0, 6.28);
+        octx.fill();
+      }
+    }
+  }
+  const drops = [];
+  for(let i = 0; i < 260; i++)drops.push({ x: Math.random(), y: Math.random(), v: .9 + Math.random() * .6, l: .03 + Math.random() * .04 });
+  function drawRain(dt, W, Hh, windX) {
+    if(rainLevel > .02) {
+      const n = Math.floor(drops.length * Math.min(1, rainLevel));
+      octx.strokeStyle = 'rgba(200,215,230,' + (.25 + .25 * rainLevel) + ')';
+      octx.lineWidth = 1.2;
+      octx.beginPath();
+      for(let i = 0; i < n; i++) {
+        const d = drops[i];
+        d.y += d.v * dt * 1.6;
+        d.x += windX * .03 * dt;
+        d.x -= Math.floor(d.x);
+        if(d.y > 1) {
+          d.y = -.05;
+          d.x = Math.random();
+        }
+        const x = d.x * W, y = d.y * Hh;
+        octx.moveTo(x, y);
+        octx.lineTo(x - windX * 2.4, y + d.l * Hh);
+      }
+      octx.stroke();
+    }
+    if(flash > .01) {
+      octx.fillStyle = 'rgba(255,255,255,' + Math.min(.85, flash * .8) + ')';
+      octx.fillRect(0, 0, W, Hh);
+    }
+  }
+  function drawStamina(W) {
+    if(ride.stam > .995&&!ride.sprintHeld)return;
+    octx.fillStyle = 'rgba(0,0,0,.4)';
+    octx.fillRect(W - 120, 40, 100, 8);
+    octx.fillStyle = ride.stam > .25 ? '#ffd23f' : '#ff5a3c';
+    octx.fillRect(W - 120, 40, 100 * ride.stam, 8);
+  }
+  function drawOverlay(dt, F, R, Uv, sunE) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = cv.clientWidth, Hh = cv.clientHeight;
+    if(ov.width !== Math.round(W * dpr)||ov.height !== Math.round(Hh * dpr)) {
+      ov.width = Math.round(W * dpr);
+      ov.height = Math.round(Hh * dpr);
+    }
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    octx.clearRect(0, 0, W, Hh);
+    drawBirds(dt, W, Hh, F, R, Uv, sunE);
+    drawButterflies(dt, W, Hh, F, R, Uv, sunE);
+    if($('md').value !== 'fly') {
+      if(ride.mode === 'bike')drawBike(W, Hh);
+      else drawKayak(W, Hh);
+    }
+    drawRain(dt, W, Hh, frame.wx||0);
+    drawStamina(W);
+  }
+  showMsg('Вы едете на велосипеде');
+
+  // ================= touch joystick, action buttons, saved settings =================
+  const joy = { x: 0, y: 0, id: null };
+  const joyEl = $('joy'), knob = $('knob');
+  function joyMove(e) {
+    const r = joyEl.getBoundingClientRect();
+    let dx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2), dy = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+    const l = Math.hypot(dx, dy);
+    if(l > 1) {
+      dx /= l;
+      dy /= l;
+    }
+    knob.style.transform = 'translate(' + dx * 37 + 'px,' + dy * 37 + 'px)';
+    joy.x = Math.abs(dx) < .12 ? 0 : dx;
+    joy.y = Math.abs(dy) < .12 ? 0 : -dy;
+  }
+  joyEl.addEventListener('pointerdown', e=> {
+    joy.id = e.pointerId;
+    joyEl.setPointerCapture(e.pointerId);
+    joyMove(e);
+    e.preventDefault();
+  });
+  joyEl.addEventListener('pointermove', e=> {
+    if(e.pointerId === joy.id)joyMove(e);
+  });
+  const joyEnd = e=> {
+    if(e.pointerId !== joy.id)return;
+    joy.id = null;
+    joy.x = 0;
+    joy.y = 0;
+    knob.style.transform = 'translate(0,0)';
+  };
+  joyEl.addEventListener('pointerup', joyEnd);
+  joyEl.addEventListener('pointercancel', joyEnd);
+  $('b_bell').addEventListener('pointerdown', ()=> {
+    if($('snd').checked)initAudio();
+    bell();
+  });
+  $('b_lamp').addEventListener('click', ()=> {
+    lampState = (lampState + 1) % 3;
+    $('b_lamp').classList.toggle('on', lampState === 1);
+    showMsg(['Фара: авто (включается в темноте)', 'Фара: включена', 'Фара: выключена'][lampState]);
+  });
+  ['pointerdown'].forEach(n=>$('b_run').addEventListener(n, ()=> {
+    btnRun = true;
+    $('b_run').classList.add('on');
+  }));
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n=>$('b_run').addEventListener(n, ()=> {
+    btnRun = false;
+    $('b_run').classList.remove('on');
+  }));
+  $('b_shot').addEventListener('click', ()=> {
+    shot = true;
+  });
+  const SAVE_IDS = ['ql', 'md', 'snd', 'vol', 'o_bd', 'sp', 'al', 'lo', 'ad', 'au', 'o_sh', 'o_tr', 'o_gr', 'o_rf', 'fps30', 'mq', 'wx', 'apd'];
+  $('apd').checked = !('ontouchstart' in window);
+  try {
+    const saved = JSON.parse(localStorage.getItem('landscape-settings') || '{}');
+    for(const id of SAVE_IDS) {
+      if(!(id in saved))continue;
+      const el = $(id);
+      if(el.type === 'checkbox')el.checked = !!saved[id];
+      else el.value = saved[id];
+    }
+  } catch(e) {}
+  function saveSettings() {
+    try {
+      const o = {};
+      for(const id of SAVE_IDS) {
+        const el = $(id);
+        o[id] = el.type === 'checkbox' ? el.checked : el.value;
+      }
+      localStorage.setItem('landscape-settings', JSON.stringify(o));
+    } catch(e) {}
+  }
+  $('pn').addEventListener('change', saveSettings);
+  $('pn').addEventListener('input', saveSettings);
+
   function frame(now) {
-    const dt=Math.min((now-last)/1000, .1);
+    if($('fps30').checked&&now-last<30) {
+      requestAnimationFrame(frame);
+      return;
+    }
+    const raw=now-last;
+    const dt=Math.min(raw/1000, .1);
     last=now;
     time+=dt;
-    ft=ft*.95+dt*1000*.05;
+    ft=ft*.6+Math.min(raw, 2000)*.4; // smoothed real frame time in ms
+    frameMin=Math.min(frameMin*1.002, Math.max(raw, 8)); // estimate of the display refresh interval
     fc++;
-    if($('k4').checked) {
+    if($('ql').value!=='auto') {
+      // fixed preset: the short side of the picture gets exactly that many pixels (capped at 4K)
       const cw = cv.clientWidth, ch = cv.clientHeight;
-      scale = Math.min(3840 / Math.max(cw, ch), 2160 / Math.min(cw, ch));
+      scale = Math.min((+$('ql').value) / Math.min(cw, ch), 3840 / Math.max(cw, ch));
     } else if($('mq').checked) scale = maxScale;
-    else if(fc%20==0) {
-      if(ft>30)scale=Math.max(.5, scale*.93);
-      else if(ft<22)scale=Math.min(maxScale, scale*1.03)
+    else if(fc%4==0) {
+      // react quickly: very slow frames shrink the picture hard, then it creeps back up
+      // thresholds follow the display's real refresh interval, so a 30 Hz display is not mistaken for "too slow"
+      if(ft>Math.max(60, frameMin*3))scale=Math.max(.3, scale*.6);
+      else if(ft>Math.max(26, frameMin*1.4))scale=Math.max(.35, scale*.92);
+      else if(ft<frameMin*1.2)scale=Math.min(maxScale, scale*1.06)
     }
     const w=Math.max(2, Math.round(cv.clientWidth*scale)), h=Math.max(2, Math.round(cv.clientHeight*scale));
     if(Math.abs(cv.width-w)>w*.04||Math.abs(cv.height-h)>h*.04||fc==1) {
@@ -643,20 +1385,70 @@ TEX_DATA.forEach((src, unit) => {
       $('hr').value=hour
     }
     $('hv').textContent=fmt(hour);
+    if(fc%10==0)$('fpsv').textContent=Math.round(1000/Math.max(ft, 1))+' FPS · '+Math.round(scale*100)+'%'+($('md').value==='fly'?'':' · '+Math.round(ride.speed*3.6)+' км/ч · '+(ride.mode==='bike'?'велосипед':'каяк'));
+    // if even the smallest picture is too slow, switch off the heaviest effects one by one
+    if($('ad').checked&&$('ql').value==='auto') {
+      if(scale<=.36&&ft>Math.max(45, frameMin*2))frame.slow=(frame.slow||0)+1;
+      else frame.slow=Math.max(0, (frame.slow||0)-1);
+      if(frame.slow>12) {
+        frame.slow=0;
+        for(const id of ['o_gr', 'o_tr', 'o_rf', 'o_sh']) {
+          if($(id).checked) {
+            $(id).checked=false;
+            break;
+          }
+        }
+      }
+    }
     // wind
     const ang=.6+.8*Math.sin(time*.05)+.4*Math.sin(time*.13), str=Math.max(.2, .65+.35*Math.sin(time*.21)+.2*Math.sin(time*.7));
+    // weather, lightning, headlight, sprint key, field of view
+    frame.wx=Math.cos(ang)*str;
+    rainLevel+=(($('wx').value==='rain'?1:0)-rainLevel)*Math.min(1, dt*.25);
+    if(rainLevel>.6) {
+      thunderT-=dt;
+      if(thunderT<=0) {
+        thunderT=8+Math.random()*14;
+        flash=1;
+        thunder(.5+Math.random()*2.5);
+      }
+    }
+    flash=Math.max(0, flash-dt*3);
+    lampOn=$('md').value!=='fly'&&(lampState===1||(lampState===0&&(sunE<.12||rainLevel>.7)));
+    ride.sprintHeld=btnRun||!!keys.ShiftLeft||!!keys.ShiftRight;
+    foc+=((1.3-Math.min(1, ride.speed/14)*.18)-foc)*Math.min(1, dt*3);
     // movement
     const fx=Math.sin(cam.yaw), fz=Math.cos(cam.yaw);
-    const mv=(+$('sp').value)+((keys.KeyW||keys.ArrowUp)?25:0)-((keys.KeyS||keys.ArrowDown)?25:0);
-    const st=((keys.KeyD||keys.ArrowRight)?-1:0)+((keys.KeyA||keys.ArrowLeft)?1:0);
-    cam.x+=(fx*mv-fz*st*25)*dt;
-    cam.z+=(fz*mv+fx*st*25)*dt;
-    const hg=Math.max(0, H(cam.x, cam.z), H(cam.x+fx*12, cam.z+fz*12), H(cam.x+fx*30, cam.z+fz*30)*.9);
-    cam.y+=(hg+(+$('al').value)-cam.y)*Math.min(1, dt*2);
-    const gh=Math.max(0, H(cam.x, cam.z));
-    if(cam.y<gh+2.5)cam.y=gh+2.5;
-    const cp=Math.cos(cam.pitch);
-    const F=[fx*cp, Math.sin(cam.pitch), fz*cp], R=norm(cross(F, [0, 1, 0])), Uv=cross(R, F);
+    const keyF=Math.max(-1, Math.min(1, ((keys.KeyW||keys.ArrowUp)?1:0)-((keys.KeyS||keys.ArrowDown)?1:0)+joy.y));
+    const keyS=Math.max(-1, Math.min(1, ((keys.KeyD||keys.ArrowRight)?-1:0)+((keys.KeyA||keys.ArrowLeft)?1:0)-joy.x));
+    if($('md').value==='fly') {
+      ride.pOff=0;
+      const mv=(+$('sp').value)+keyF*25;
+      cam.x+=(fx*mv-fz*keyS*25)*dt;
+      cam.z+=(fz*mv+fx*keyS*25)*dt;
+      const hg=Math.max(0, H(cam.x, cam.z), H(cam.x+fx*12, cam.z+fz*12), H(cam.x+fx*30, cam.z+fz*30)*.9);
+      cam.y+=(hg+(+$('al').value)-cam.y)*Math.min(1, dt*2);
+      const gh=Math.max(0, H(cam.x, cam.z));
+      if(cam.y<gh+2.5)cam.y=gh+2.5;
+    } else {
+      rideStep(dt, fx, fz, keyF, keyS, Math.cos(ang)*str, Math.sin(ang)*str);
+    }
+    // smoothed steering amount, used to tilt the handlebars and kayak
+    const yawRate=(cam.yaw-ride.lastYaw)/Math.max(dt, .001);
+    ride.steer+=(Math.max(-1, Math.min(1, yawRate*.3))-ride.steer)*Math.min(1, dt*6);
+    ride.lastYaw=cam.yaw;
+    if(fc%10==0) {
+      // is there water nearby? (drives the water sound)
+      frame.wn=H(cam.x, cam.z)<0?1:0;
+      for(const d of [[25, 0], [-25, 0], [0, 25], [0, -25]]) {
+        if(H(cam.x+d[0], cam.z+d[1])<0)frame.wn=Math.max(frame.wn, .6);
+      }
+    }
+    msgTimer-=dt;
+    if(msgTimer<=0)$('msg').style.opacity=0;
+    const pv=cam.pitch+(ride.pOff||0);
+    const cp=Math.cos(pv);
+    const F=[fx*cp, Math.sin(pv), fz*cp], R=norm(cross(F, [0, 1, 0])), Uv=cross(R, F);
     const ph=(hour-6)/12*Math.PI, sun=norm([Math.cos(ph)*.85, Math.sin(ph), .5]);
     gl.uniform2f(U.uRes, cv.width, cv.height);
     gl.uniform2f(U.uWind, Math.cos(ang)*str, Math.sin(ang)*str);
@@ -666,8 +1458,24 @@ TEX_DATA.forEach((src, unit) => {
     gl.uniform3fv(U.uR, R);
     gl.uniform3fv(U.uU, Uv);
     gl.uniform3fv(U.uSun, sun);
+    gl.uniform1f(U.uLow, $('lo').checked ? 1 : 0);
+    gl.uniform1f(U.uRain, rainLevel);
+    gl.uniform1f(U.uLamp, lampOn ? 1 : 0);
+    gl.uniform1f(U.uFoc, foc);
     gl.uniform4f(U.uOpt, $('o_sh').checked ? 1 : 0, $('o_tr').checked ? 1 : 0, $('o_gr').checked ? 1 : 0, $('o_rf').checked ? 1 : 0);
+    drawOverlay(dt, F, R, Uv, sunE);
+    updateAudio(dt, str, frame.wn||0, sunE);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if(shot) {
+      // the picture must be read in the same frame it was drawn
+      shot=false;
+      cv.toBlob(b=> {
+        const link=document.createElement('a');
+        link.href=URL.createObjectURL(b);
+        link.download='landscape.png';
+        link.click();
+      });
+    }
     requestAnimationFrame(frame)
   }
   requestAnimationFrame(frame);
