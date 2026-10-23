@@ -161,14 +161,62 @@ canvas {
 <button id="b_lamp" aria-label="Фара">💡</button>
 <button id="b_run" aria-label="Ускорение">⚡</button>
 <button id="b_shot" aria-label="Скриншот">📷</button>
+<button id="b_view" aria-label="Вид">🎥</button>
 </div>
-<div id="hint">Левый джойстик — ехать и рулить · свайп по экрану — смотреть · 🔔 💡 ⚡ 📷 справа</div>
+<div id="hint">Левый джойстик — ехать и рулить · свайп — смотреть · 🎥 вид от 3-го лица · 🔔 💡 ⚡ 📷</div>
 <div id="fpsv" style="position:fixed;right:10px;top:calc(10px + env(safe-area-inset-top,0px));color:#fff;font:12px system-ui;text-shadow:0 1px 3px #000;z-index:2"></div>
 <div id="ui"><button id="tg">⚙</button><div id="pn">
 <label>Время: <b id="hv"></b><input id="hr" type="range" min="0" max="24" step=".05" value="9.5"></label>
 <label><input type="checkbox" id="au" checked> Смена дня и ночи</label>
 <label>Макс. скорость<input id="sp" type="range" min="0" max="60" value="36"></label>
 <label><input type="checkbox" id="apd"> Автопедали (без джойстика)</label>
+<label>Мощность устройства
+<select id="pf">
+<option value="custom">Настроить вручную</option>
+<option value="vweak">Очень слабое</option>
+<option value="weak">Слабое</option>
+<option value="mid">Среднее</option>
+<option value="strong">Мощное</option>
+<option value="ultra">Ультра (ПК)</option>
+</select></label>
+<label>Деревья
+<select id="mt">
+<option value="0">Быстрые (процедурные)</option>
+<option value="1" selected>Модели берёзы и дуба: лёгкие</option>
+<option value="2">Модели берёзы и дуба: детальные</option>
+</select></label>
+<label>Целевой FPS
+<select id="fpt">
+<option value="30">30</option>
+<option value="45">45</option>
+<option value="60" selected>60</option>
+</select></label>
+<label>Скин велосипеда
+<select id="skb">
+<option value="0">Красный</option>
+<option value="1">Синий</option>
+<option value="2">Чёрный матовый</option>
+<option value="3">Белый</option>
+<option value="4">Неоновый зелёный</option>
+<option value="5">Золотой</option>
+</select></label>
+<label>Скин каяка
+<select id="skk">
+<option value="0">Оранжевый</option>
+<option value="1">Жёлтый</option>
+<option value="2">Красный</option>
+<option value="3">Зелёный</option>
+<option value="4">Камуфляж</option>
+<option value="5">Полосатый</option>
+</select></label>
+<label><input type="checkbox" id="o_cp" checked> Стоянки (шалаши, палатки, костры)</label>
+<label>Время года
+<select id="sea">
+<option value="0">Лето</option>
+<option value="1">Осень</option>
+<option value="2">Зима</option>
+</select></label>
+<label><input type="checkbox" id="o_mm" checked> Мини-карта</label>
 <label>Погода
 <select id="wx">
 <option value="clear">Ясно</option>
@@ -194,7 +242,7 @@ canvas {
 <label><input type="checkbox" id="o_bd" checked> Птицы</label>
 <hr>
 <label><input type="checkbox" id="lo" checked> Режим слабого телефона</label>
-<label><input type="checkbox" id="ad" checked> Авто-снижение эффектов</label>
+<label><input type="checkbox" id="ad"> Авто-отключение эффектов при низком FPS</label>
 <label><input type="checkbox" id="o_sh"> Тени</label>
 <label><input type="checkbox" id="o_tr" checked> Деревья</label>
 <label><input type="checkbox" id="o_gr" checked> Объёмная трава</label>
@@ -212,6 +260,13 @@ uniform float uLow; // 1 = weak-device mode: fewer steps, shorter view, 1 grass 
 uniform vec4 uOpt; // x: shadows, y: trees, z: volumetric grass, w: clouds in water reflection
 uniform float uTime;
 uniform vec3 uCam, uF, uR, uU, uSun;
+uniform vec4 uObj, uObj2; // vehicle: xyz position and w heading; x steer, y wheel angle, z crank or paddle phase, w speed
+uniform float uSkinB, uSkinK, uCamp; // bicycle skin, kayak skin, camps on/off
+uniform float uBow; // rainbow strength 0..1
+uniform float uMeshR; // radius inside which real 3D tree models replace the shader trees
+const float NEAR=.1, FAR=1500.;
+uniform float uObjMode, uThird, uSeason; // vehicle 0 none / 1 bicycle / 2 kayak, third-person view, season 0 summer / 1 autumn / 2 winter
+uniform vec4 uRip[6]; // water ripples: x, z, start time, strength
 out vec4 oc;
 const mat2 R2=mat2(.8, .6, -.6, .8);
 float dayf, sunE;
@@ -219,7 +274,8 @@ vec3 L, sunCol, ambCol, horC, zenC;
 float gS, gTint, gTT;
 vec2 gD;
 bool gLeaf;
-bool gReal; // true only when treeD returned a real tree distance, not a cell/bounding-box step bound
+bool gReal;
+float gSp; // species of the tree last evaluated: 0 birch, 1 oak, 2 other // true only when treeD returned a real tree distance, not a cell/bounding-box step bound
 // mip level for a texture tiled sc times per unit, from distance and render resolution
 float lodFor(float t, float sc) {
   return max(0., log2(t*.0016*(1080./uRes.y)*256.*sc));
@@ -228,6 +284,9 @@ float lodFor(float t, float sc) {
 float ss(float a, float b, float x) {
   float t=clamp((x-a)/(b-a), 0., 1.);
   return t*t*(3.-2.*t);
+}
+float autumnK() {
+  return ss(.2, 1., uSeason)*(1.-ss(1.2, 1.7, uSeason));
 }
 
 float hs(ivec2 p) {
@@ -272,7 +331,7 @@ float H(vec2 p) {
 
 // ---- grass
 bool grassIn(vec2 xz, float hh, float g, float t) {
-  float gm=ss(1., 2.4, g)*(1.-ss(28., 44., g))*(1.-ss(20., 55., t));
+  float gm=ss(1., 2.4, g)*(1.-ss(28., 44., g))*(1.-ss(20., 55., t))*(1.-ss(1.2, 1.8, uSeason));
   if(gm<.03)return false;
   float gust=nz(xz*.07-uWind*uTime*1.6);
   vec2 off=uWind*(.15+.85*gust)*hh*.55+.05*hh*vec2(sin(uTime*2.3+xz.y*.9), cos(uTime*2.+xz.x*.8));
@@ -311,13 +370,239 @@ float smin(float a, float b, float k) {
   return min(a, b)-h*h*k*.25;
 }
 
+
+// ================= 3D vehicles: bicycle and kayak as signed distance fields =================
+// Vehicle space: x to the right, y up, z forward, origin on the ground (bike) or on the water (kayak).
+float oM; // material of the nearest part: 1 frame, 2 tyre, 3 metal, 4 rubber, 5 lamp, 6 jersey, 7 skin, 8 helmet, 9 shoes, 10 hull, 11 deck, 12 shaft, 13 blade
+#define PART(d, id) { float _d=(d); if(_d<best) { best=_d; oM=id; } }
+float sdBox(vec3 p, vec3 b) {
+  vec3 d=abs(p)-b;
+  return length(max(d, 0.))+min(max(d.x, max(d.y, d.z)), 0.);
+}
+float sdTorusX(vec3 p, float R, float r) { // torus around the x axis
+  vec2 q=vec2(length(p.yz)-R, p.x);
+  return length(q)-r;
+}
+float sdEll(vec3 p, vec3 r) {
+  float k0=length(p/r);
+  float k1=length(p/(r*r));
+  return k0*(k0-1.)/max(k1, .0001);
+}
+vec3 toLocalPt(vec3 w) {
+  vec3 d=w-uObj.xyz;
+  float c=cos(uObj.w), s=sin(uObj.w);
+  return vec3(-c*d.x+s*d.z, d.y, s*d.x+c*d.z);
+}
+vec3 toLocalDir(vec3 v) {
+  float c=cos(uObj.w), s=sin(uObj.w);
+  return vec3(-c*v.x+s*v.z, v.y, s*v.x+c*v.z);
+}
+vec3 toWorldDir(vec3 v) { // the rotation is its own inverse
+  return toLocalDir(v);
+}
+void wheelParts(vec3 p, float ang, inout float best) {
+  PART(sdTorusX(p, .31, .034), 2.);
+  PART(sdTorusX(p, .272, .009), 3.);
+  PART(sdCap(p, vec3(-.04, 0., 0.), vec3(.04, 0., 0.), .02), 3.);
+  if(uLow<.5) {
+    float a=atan(p.y, p.z)+ang;
+    float sa=6.2832/12.;
+    a=mod(a+.5*sa, sa)-.5*sa;
+    float r=length(p.yz);
+    vec2 q=r*vec2(cos(a), sin(a));
+    PART(max(length(vec2(q.y, p.x))-.004, max(r-.27, .03-r)), 3.);
+  }
+}
+void legParts(vec3 p, vec3 hip, vec3 foot, inout float best) {
+  // two-bone leg: the knee bends forward
+  vec2 d=foot.yz-hip.yz;
+  float dist=max(length(d), .01);
+  float hgt=sqrt(max(.43*.43-dist*dist*.25, 0.));
+  vec2 perp=vec2(d.y, -d.x)/dist;
+  if(perp.y<0.)perp=-perp;
+  vec2 kyz=hip.yz+d*.5+perp*hgt;
+  vec3 knee=vec3(mix(hip.x, foot.x, .5)+sign(hip.x)*.04, kyz.x, kyz.y);
+  PART(sdCap(p, hip, knee, .065), 9.);
+  PART(sdCap(p, knee, foot+vec3(0., .05, 0.), .045), 9.);
+  PART(sdEll(p-(foot+vec3(0., .025, .03)), vec3(.05, .03, .11)), 9.);
+}
+float bikeD(vec3 p) {
+  float best=1e3;
+  // frame
+  PART(sdCap(p, vec3(0., .78, .46), vec3(0., .98, .43), .022), 1.);
+  PART(sdCap(p, vec3(0., .93, .43), vec3(0., .88, -.22), .018), 1.);
+  PART(sdCap(p, vec3(0., .80, .45), vec3(0., .30, 0.), .024), 1.);
+  PART(sdCap(p, vec3(0., .30, 0.), vec3(0., .90, -.25), .02), 1.);
+  vec3 sp=vec3(abs(p.x), p.y, p.z);
+  PART(sdCap(sp, vec3(.05, .88, -.23), vec3(.055, .34, -.52), .01), 1.);
+  PART(sdCap(sp, vec3(.05, .30, 0.), vec3(.055, .34, -.52), .011), 1.);
+  PART(sdCap(p, vec3(0., .90, -.25), vec3(0., 1.02, -.28), .014), 4.);
+  PART(sdEll(p-vec3(0., 1.04, -.29), vec3(.075, .028, .14)), 4.);
+  wheelParts(p-vec3(0., .34, -.52), uObj2.y, best);
+  // crank and pedals
+  float ph=uObj2.z;
+  vec2 cr=.17*vec2(sin(ph), cos(ph));
+  vec3 pR=vec3(.12, .30+cr.x, cr.y), pL=vec3(-.12, .30-cr.x, -cr.y);
+  PART(sdCap(p, vec3(.07, .30, 0.), pR-vec3(.05, 0., 0.), .012), 3.);
+  PART(sdCap(p, vec3(-.07, .30, 0.), pL+vec3(.05, 0., 0.), .012), 3.);
+  PART(sdBox(p-pR, vec3(.05, .012, .045)), 4.);
+  PART(sdBox(p-pL, vec3(.05, .012, .045)), 4.);
+  // steering: fork, handlebar and front wheel turn about a vertical axis through the head tube
+  vec3 q=p;
+  q.z-=.45;
+  float sc=cos(uObj2.x), sn=sin(uObj2.x);
+  q.xz=vec2(sc*q.x-sn*q.z, sn*q.x+sc*q.z);
+  q.z+=.45;
+  vec3 sq=vec3(abs(q.x), q.y, q.z);
+  PART(sdCap(sq, vec3(.055, .34, .55), vec3(.05, .87, .45), .014), 1.);
+  PART(sdCap(q, vec3(-.055, .87, .45), vec3(.055, .87, .45), .016), 1.);
+  PART(sdCap(q, vec3(0., .87, .45), vec3(0., 1.05, .43), .015), 3.);
+  PART(sdCap(q, vec3(0., 1.05, .43), vec3(0., 1.09, .34), .018), 3.);
+  PART(sdCap(sq, vec3(0., 1.10, .335), vec3(.30, 1.09, .31), .011), 3.);
+  PART(sdCap(sq, vec3(.22, 1.09, .312), vec3(.34, 1.085, .30), .018), 4.);
+  PART(sdCap(sq, vec3(.20, 1.105, .325), vec3(.12, 1.10, .26), .006), 3.);
+  PART(length(q-vec3(0., 1.13, .42))-.034, 5.);
+  wheelParts(q-vec3(0., .34, .55), uObj2.y, best);
+  // rider: arms and legs always visible, torso and head only in the third-person view
+  vec3 shoulder=vec3(.20, 1.36, -.10), elbow=vec3(.28, 1.16, .13), hand=vec3(.31, 1.09, .30);
+  PART(sdCap(sp, shoulder, elbow, .045), 6.);
+  PART(sdCap(sq, elbow, hand, .038), 6.);
+  PART(length(sq-hand)-.05, 4.);
+  legParts(p, vec3(.09, .96, -.30), pR, best);
+  legParts(p, vec3(-.09, .96, -.30), pL, best);
+  if(uThird>.5) {
+    PART(sdCap(p, vec3(0., .98, -.30), vec3(0., 1.36, -.10), .14), 6.);
+    PART(length(p-vec3(0., 1.55, -.02))-.105, 7.);
+    PART(sdEll(p-vec3(0., 1.59, -.03), vec3(.125, .10, .15)), 8.);
+  }
+  return best;
+}
+float kayakD(vec3 p) {
+  float best=1e3;
+  vec3 q=p;
+  q.y-=.12+.09*pow(abs(p.z)/1.65, 2.);
+  float hull=sdEll(q, vec3(.30, .16, 1.65));
+  float cock=sdEll(p-vec3(0., .24, -.10), vec3(.19, .14, .45));
+  PART(max(hull, -cock), 10.);
+  PART(sdEll(p-vec3(0., .335, -.10), vec3(.21, .02, .46)), 11.);
+  // double paddle, rolls from side to side
+  vec3 pc=vec3(0., .55, .16);
+  float pr=sin(uObj2.z)*.5;
+  float cr=cos(pr), sr=sin(pr);
+  vec3 pp=p-pc;
+  pp.xy=vec2(cr*pp.x+sr*pp.y, -sr*pp.x+cr*pp.y);
+  PART(sdCap(pp, vec3(-1.15, 0., 0.), vec3(1.15, 0., 0.), .017), 12.);
+  PART(sdEll(vec3(abs(pp.x)-1.2, pp.y, pp.z), vec3(.17, .016, .11)), 13.);
+  // arms hold the shaft
+  vec3 hR=pc+vec3(cr*.34, sr*.34, 0.), hL=pc+vec3(-cr*.34, -sr*.34, 0.);
+  vec3 sR=vec3(.19, .66, -.07), sL=vec3(-.19, .66, -.07);
+  vec3 eR=(sR+hR)*.5+vec3(.07, -.10, -.05), eL=(sL+hL)*.5+vec3(-.07, -.10, -.05);
+  PART(sdCap(p, sR, eR, .045), 6.);
+  PART(sdCap(p, eR, hR, .038), 6.);
+  PART(length(p-hR)-.05, 4.);
+  PART(sdCap(p, sL, eL, .045), 6.);
+  PART(sdCap(p, eL, hL, .038), 6.);
+  PART(length(p-hL)-.05, 4.);
+  if(uThird>.5) {
+    PART(sdCap(p, vec3(0., .34, -.10), vec3(0., .74, -.06), .14), 6.);
+    PART(length(p-vec3(0., .91, -.04))-.105, 7.);
+    PART(sdEll(p-vec3(0., .95, -.05), vec3(.125, .10, .15)), 8.);
+  }
+  return best;
+}
+float objD(vec3 p) {
+  oM=0.;
+  return uObjMode<1.5?bikeD(p):kayakD(p);
+}
+// distance along the ray to the vehicle, or -1 on a miss; the ray is given in vehicle space
+float traceObj(vec3 lo, vec3 ld) {
+  vec3 bmin=uObjMode<1.5?vec3(-.45, 0., -.75):vec3(-1.45, -.1, -1.7);
+  vec3 bmax=uObjMode<1.5?vec3(.45, 1.75, .95):vec3(1.45, 1.2, 1.7);
+  vec3 d2=ld+vec3(step(abs(ld.x), 1e-5), step(abs(ld.y), 1e-5), step(abs(ld.z), 1e-5))*1e-5;
+  vec3 inv=1./d2;
+  vec3 t0=(bmin-lo)*inv, t1=(bmax-lo)*inv;
+  vec3 tmn=min(t0, t1), tmx=max(t0, t1);
+  float tn=max(max(tmn.x, tmn.y), max(tmn.z, 0.));
+  float tf=min(min(tmx.x, tmx.y), tmx.z);
+  if(tf<tn)return -1.;
+  float tt=tn;
+  for(int i=0; i<56; i++) {
+    if(uLow>.5&&i>34)break;
+    float d=objD(lo+ld*tt);
+    if(d<.003)return tt;
+    tt+=d*.85;
+    if(tt>tf)break;
+  }
+  return -1.;
+}
+
 // Per-cell tree data cache: a ray usually stays in one cell for many steps, so the cell's
 // hashes and the terrain height at its tree are computed once and reused.
 ivec2 tCid=ivec2(-99999);
 vec2 tC;
-float tTy, tSc, tCa, tTT;
+float tTy, tSc, tCa, tTT, tSp;
 bool tOk;
 
+// ---- camps: one camp (hut, tent, fire pit, log seats) in roughly every other 110-unit cell, on flat dry ground
+ivec2 cCid=ivec2(-99999);
+vec2 cC;
+float cGy, cAng, cSd;
+bool cOk;
+float gCm; // material of the last camp point evaluated
+#define CP(d, id) { float _c=(d); if(_c<best) { best=_c; gCm=id; } }
+void campCell(vec2 xz) {
+  ivec2 ii=ivec2(floor(xz/110.));
+  if(ii==cCid)return;
+  cCid=ii;
+  cOk=hs(ii+ivec2(91, 7))<.5;
+  if(!cOk)return;
+  vec2 id=vec2(ii);
+  cC=(id+.2+.6*vec2(hs(ii+ivec2(33, 5)), hs(ii+ivec2(8, 61))))*110.;
+  cGy=H(cC);
+  float sl=abs(H(cC+vec2(4., 0.))-cGy)+abs(H(cC+vec2(0., 4.))-cGy)+abs(H(cC-vec2(4., 0.))-cGy)+abs(H(cC-vec2(0., 4.))-cGy);
+  cOk=cGy>2.6&&cGy<16.&&sl<3.6;
+  cAng=hs(ii+ivec2(12, 77))*6.283;
+  cSd=hs(ii+ivec2(60, 21));
+}
+// triangular prism standing on y=0, length along z
+float sdPrism(vec3 q, float w, float h, float l) {
+  float e=(abs(q.x)*h+q.y*w-w*h)/sqrt(w*w+h*h);
+  return max(max(e, -q.y), abs(q.z)-l);
+}
+float campD(vec3 p) {
+  campCell(p.xz);
+  vec2 fr=p.xz/110.-floor(p.xz/110.);
+  vec2 ed=min(fr, 1.-fr)*110.;
+  float de=min(ed.x, ed.y)+18.;
+  if(!cOk)return de;
+  vec3 q=vec3(p.x-cC.x, p.y-cGy+.05, p.z-cC.y);
+  float bd=max(length(q.xz)-11., q.y-5.);
+  if(bd>1.)return min(bd, de);
+  float ca=cos(cAng), sa=sin(cAng);
+  q.xz=vec2(ca*q.x+sa*q.z, -sa*q.x+ca*q.z);
+  float best=1e3;
+  // fire pit: ring of stones, ash, crossed logs, flickering flame
+  vec3 f=q-vec3(0., .1, 0.);
+  CP(length(vec2(length(f.xz)-.62, f.y))-.13-.04*nz(q.xz*9.), 3.);
+  CP(max(length(q.xz)-.5, abs(q.y-.03)-.03), 4.);
+  CP(sdCap(q, vec3(-.45, .2, -.12), vec3(.45, .3, .14), .07), 2.);
+  CP(sdCap(q, vec3(-.3, .3, .35), vec3(.32, .2, -.4), .065), 2.);
+  float fl=.62+.12*sin(uTime*8.);
+  CP(sdEll(q-vec3(0., .5+fl*.2, 0.), vec3(.26, fl, .26))+.06*sin(q.y*12.-uTime*14.+q.x*6.), 6.);
+  // hut: A-frame of branches and thatch, open on the side facing the fire
+  vec3 hq=vec3(q.z, q.y, q.x-4.6);
+  float outer=sdPrism(hq, 1.5, 2., 1.7);
+  float inner=sdPrism(vec3(hq.x, hq.y-.1, hq.z+.28), 1.3, 1.85, 1.62);
+  CP(max(outer, -inner), 1.);
+  CP(sdCap(q, vec3(2.7, 2.05, 0.), vec3(6.6, 2.05, 0.), .05), 2.);
+  // tent, door towards the fire
+  vec3 tp=q-vec3(-1.4, 0., -4.4);
+  CP(max(sdPrism(tp, 1.05, 1.15, 1.1), -sdPrism(vec3(tp.x, tp.y-.02, tp.z-.45), .93, 1.05, 1.1)), 7.);
+  // two log seats
+  CP(sdCap(q, vec3(-1.1, .17, 1.7), vec3(1.1, .17, 1.9), .17), 2.);
+  CP(sdCap(q, vec3(1.8, .17, -1.2), vec3(1.7, .17, 1.), .16), 2.);
+  return best;
+}
 float treeD(vec3 p) {
   gReal=false;
   vec2 id=floor(p.xz/16.);
@@ -333,7 +618,13 @@ float treeD(vec3 p) {
       tC=(id+.5+(vec2(hs(ii+ivec2(5, 9)), hs(ii+ivec2(13, 2)))-.5)*.3)*16.;
       tTy=H(tC);
       tOk=tTy>=2.3&&tTy<=36.;
+      if(tOk&&uCamp>.5) {
+        campCell(tC); // keep trees out of camps
+        if(cOk&&length(tC-cC)<12.)tOk=false;
+      }
+      tSp=hs(ii+ivec2(17, 31)); // species roll: below .4 birch, below .75 oak, otherwise a generic tree
       tSc=.75+.45*hs(ii+ivec2(21, 8));
+      if(tSp>=.4&&tSp<.75)tSc=min(tSc, 1.05);
       tCa=hs(ii+ivec2(2, 2))*6.283;
       tTT=hs(ii+ivec2(40, 60));
     }
@@ -341,31 +632,45 @@ float treeD(vec3 p) {
   if(!tOk)return de;
   vec2 c=tC;
   float s=tSc;
+  float birch=tSp<.4?1.:0.;
+  float oak=(tSp>=.4&&tSp<.75)?1.:0.;
   vec3 q=p-vec3(c.x, tTy, c.y);
-  float bd=max(length(q.xz)-5.5*s, max(-q.y-1., q.y-11.*s));
+  float topH=birch>.5?14.*s:11.*s;
+  float bd=max(length(q.xz)-5.5*s, max(-q.y-1., q.y-topH));
   if(bd>1.5)return min(bd, de);
   float tdist=length(p-uCam);
   gTT=tTT;
+  gSp=birch>.5?0.:(oak>.5?1.:2.);
+  // species shape: birch is tall and slim with a small crown, oak is short with a thick trunk and a wide crown
+  float trunkH=birch>.5?7.5*s:(oak>.5?3.6*s:6.*s);
+  float trunkR=birch>.5?.15*s:(oak>.5?.42*s:.26*s);
+  float crownY=birch>.5?7.6*s:(oak>.5?5.4*s:6.*s);
+  float crownR=birch>.5?1.5*s:(oak>.5?2.7*s:2.3*s);
+  float spread=birch>.5?.8*s:(oak>.5?1.15*s:.9*s);
+  float winter=3.*ss(1.3, 1.9, uSeason); // pushes the leaf blobs away so the tree turns bare
   if(tdist>140.) {
     // far LOD: straight trunk and a single sphere crown, no sway, no branches
-    float dTf=max(length(q.xz)-.26*s, max(-q.y, q.y-6.*s));
-    float dcf=length(q-vec3(0., 6.*s, 0.))-3.2*s;
+    float dTf=max(length(q.xz)-trunkR, max(-q.y, q.y-trunkH));
+    float dcf=length(q-vec3(0., crownY, 0.))-crownR*1.4+winter;
     gLeaf=dcf*.7<dTf;
     gReal=true;
     return min(min(dTf, dcf*.7), de);
   }
   float hf=clamp(q.y/(9.*s), 0., 1.);
   q.xz-=(uWind*.9+.2*vec2(sin(uTime*1.3+c.x), cos(uTime*1.1+c.y)))*hf*hf*.9;
-  float tr=.26*s*(1.-.55*clamp(q.y/(5.5*s), 0., 1.));
-  float dT=max(length(q.xz)-tr, max(-q.y, q.y-6.*s));
+  float tr=trunkR*(1.-.55*clamp(q.y/trunkH, 0., 1.));
+  float dT=max(length(q.xz)-tr, max(-q.y, q.y-trunkH));
   float ca=tCa;
-  vec3 o1=vec3(cos(ca), 0., sin(ca))*.9*s, o2=vec3(cos(ca+2.1), .5, sin(ca+2.1))*.9*s, o3=vec3(cos(ca+4.2), -.2, sin(ca+4.2))*.9*s;
-  vec3 cc=vec3(0., 6.*s, 0.);
-  float dc=smin(smin(length(q-cc-o1), length(q-cc-o2), 1.), length(q-cc-o3), 1.)-2.3*s;
+  vec3 o1=vec3(cos(ca), 0., sin(ca))*spread, o2=vec3(cos(ca+2.1), .5, sin(ca+2.1))*spread, o3=vec3(cos(ca+4.2), -.2, sin(ca+4.2))*spread;
+  vec3 cc=vec3(0., crownY, 0.);
+  float dc=smin(smin(length(q-cc-o1), length(q-cc-o2), 1.), length(q-cc-o3), 1.)-crownR;
+  if(birch>.5)dc=smin(dc, length(q-cc-vec3(0., 1.6*s, 0.))-crownR*.7, .8);
   if(tdist<90.)dc+=.35*s*sin(q.x*2.1+q.y*1.7+uTime*1.1)*sin(q.z*2.3-q.y*1.4+uTime*.9);
   if(tdist<40.)dc+=.12*sin(q.x*5.3+q.z*4.7+q.y*3.9);
+  dc+=winter;
   if(tdist<70.) {
-    float dB=min(sdCap(q, vec3(0, 3.5*s, 0), cc+o1*.6, .1*s), min(sdCap(q, vec3(0, 4.3*s, 0), cc+o2*.6, .09*s), sdCap(q, vec3(0, 3.2*s, 0), cc+o3*.6, .08*s)));
+    float br=birch>.5?.05*s:(oak>.5?.2*s:.09*s);
+    float dB=min(sdCap(q, vec3(0, trunkH*.62, 0), cc+o1*.6, br), min(sdCap(q, vec3(0, trunkH*.78, 0), cc+o2*.6, br*.9), sdCap(q, vec3(0, trunkH*.55, 0), cc+o3*.6, br*.8)));
     dT=min(dT, dB);
   }
   gLeaf=dc*.7<dT;
@@ -432,22 +737,150 @@ vec3 sky(vec3 rd) {
   float nt=1.-dayf;
   if(rd.y>0.) {
     if(nt>.05) {
-      vec2 sp=rd.xz/(rd.y+.2)*140.;
-      float st=hs(ivec2(floor(sp)));
-      c+=vec3(.85, .9, 1.)*step(.995, st)*nt*.8*(.7+.3*sin(uTime*3.+st*100.));
+      // three layers of stars of different size, colour and twinkle, slowly turning with the night
+      float ar=uTime*.004;
+      vec3 rs=vec3(cos(ar)*rd.x-sin(ar)*rd.z, rd.y, sin(ar)*rd.x+cos(ar)*rd.z);
+      vec3 scol=vec3(0.);
+      for(int k=0; k<3; k++) {
+        float sc=70.+float(k)*90.;
+        vec2 sp=rs.xz/(rs.y+.35)*sc;
+        ivec2 cid=ivec2(floor(sp))+ivec2(k*131, k*57);
+        vec2 off=vec2(hs(cid+ivec2(7, 3)), hs(cid+ivec2(11, 19)))-.5;
+        float d=length(fract(sp)-.5-off*.6);
+        float on=step(.988-float(k)*.003, hs(cid))*(.4+.6*hs(cid+ivec2(5, 5)));
+        float tw=.75+.25*sin(uTime*(2.+3.*hs(cid+ivec2(2, 9)))+hs(cid)*60.);
+        vec3 tint=mix(vec3(.75, .85, 1.), vec3(1., .85, .65), hs(cid+ivec2(9, 1)));
+        scol+=tint*on*tw*ss(.2, 0., d)*(1.2-float(k)*.25);
+      }
+      // the Milky Way: a soft glowing band broken up by dark dust lanes
+      float mwd=abs(dot(normalize(rs), normalize(vec3(.35, .8, .45))));
+      float mwa=atan(rs.z, rs.x);
+      float mw=exp(-mwd*mwd*18.)*(.35+.9*fbm(vec2(mwa*2.5, rs.y*7.)))*(1.-.6*ss(.55, .75, fbm(vec2(mwa*5.+9., rs.y*13.))));
+      c+=(scol*1.3+vec3(.55, .6, .85)*mw*.22)*nt*nt*ss(0., .15, rs.y)*(1.-uRain);
       c+=vec3(.8, .85, .95)*.9*ss(.9993, .9996, dot(rd, -uSun))*nt;
     }
     c+=sunCol*.6*ss(.9996, .99985, dot(rd, uSun));
+    if(uBow>.01) {
+      // rainbow: a ring about 41 degrees around the point opposite the sun, red on the outside
+      float ang=acos(clamp(dot(rd, -uSun), -1., 1.));
+      float bp=(ang-.69)/.075;
+      if(bp>0.&&bp<1.) {
+        vec3 rb=.5+.5*cos(6.2832*((1.-bp)*.8+vec3(0., .33, .67)));
+        c+=rb*sin(bp*3.1416)*uBow*.35*dayf*ss(0., .05, rd.y);
+      }
+    }
   }
   vec4 cl=clouds(rd);
   return c*cl.a+cl.rgb;
 }
 
+// shading of the vehicle: sun, sky light, a sky reflection and a highlight depending on the material
+vec3 bikeSkin(float k) {
+  if(k<.5)return vec3(.62, .04, .05);
+  if(k<1.5)return vec3(.05, .2, .7);
+  if(k<2.5)return vec3(.03, .03, .035);
+  if(k<3.5)return vec3(.85, .85, .82);
+  if(k<4.5)return vec3(.15, .85, .1);
+  return vec3(.85, .62, .12);
+}
+vec3 kayakSkin(float k, vec3 pl) {
+  if(k<.5)return vec3(.95, .4, .04);
+  if(k<1.5)return vec3(.95, .8, .05);
+  if(k<2.5)return vec3(.75, .05, .05);
+  if(k<3.5)return vec3(.1, .5, .15);
+  if(k<4.5) {
+    float c=nz(pl.xz*5.)+.5*nz(pl.xz*11.+3.);
+    return c>.85?vec3(.12, .16, .07):(c>.6?vec3(.3, .35, .15):vec3(.45, .42, .25));
+  }
+  return mix(vec3(.9), vec3(.05), step(.5, fract(pl.z*3.)));
+}
+vec3 shadeObj(vec3 lo, vec3 ld, float tt, vec3 rdW) {
+  vec3 pl=lo+ld*tt;
+  vec2 k=vec2(1, -1)*.0015;
+  vec3 n=normalize(k.xyy*objD(pl+k.xyy)+k.yyx*objD(pl+k.yyx)+k.yxy*objD(pl+k.yxy)+k.xxx*objD(pl+k.xxx));
+  objD(pl);
+  float m=oM;
+  vec3 alb=vec3(.5);
+  float rough=.5, metal=0., emis=0.;
+  if(m<1.5) {
+    alb=bikeSkin(uSkinB);
+    metal=(uSkinB>1.5&&uSkinB<2.5)?.1:(uSkinB>4.5?.9:.5);
+    rough=(uSkinB>1.5&&uSkinB<2.5)?.7:.25;
+  } else if(m<2.5) {
+    alb=vec3(.03);
+    rough=.9;
+  } else if(m<3.5) {
+    alb=vec3(.78, .8, .82);
+    metal=.9;
+    rough=.2;
+  } else if(m<4.5) {
+    alb=vec3(.05);
+    rough=.8;
+  } else if(m<5.5) {
+    alb=vec3(1., .95, .8);
+    emis=uLamp;
+    rough=.1;
+  } else if(m<6.5) {
+    alb=vec3(.1, .3, .75);
+    rough=.85;
+  } else if(m<7.5) {
+    alb=vec3(.78, .56, .45);
+    rough=.7;
+  } else if(m<8.5) {
+    alb=vec3(.95, .75, .08);
+    rough=.3;
+  } else if(m<9.5) {
+    alb=vec3(.07, .07, .09);
+    rough=.8;
+  } else if(m<10.5) {
+    alb=kayakSkin(uSkinK, pl);
+    metal=.1;
+    rough=.2;
+  } else if(m<11.5) {
+    alb=vec3(.08, .08, .1);
+    rough=.6;
+  } else if(m<12.5) {
+    alb=vec3(.12, .12, .14);
+    metal=.6;
+    rough=.3;
+  } else {
+    alb=vec3(.08, .45, .8);
+    rough=.3;
+  }
+  alb*=1.-.3*uRain;
+  vec3 nW=toWorldDir(n);
+  vec3 V=-rdW;
+  float ndl=max(dot(nW, L), 0.);
+  vec3 hv=normalize(L+V);
+  float spec=pow(max(dot(nW, hv), 0.), mix(120., 8., rough))*(1.-rough*.6);
+  float fres=pow(1.-max(dot(nW, V), 0.), 4.);
+  vec3 refl=skyBase(reflect(rdW, nW));
+  float ao=mix(.4, 1., clamp(objD(pl+n*.08)/.08, 0., 1.));
+  vec3 col=alb*(sunCol*ndl+ambCol*(.5+.5*nW.y)*ao)*(1.-metal*.7);
+  col+=sunCol*spec*mix(.04, .9, metal);
+  col+=refl*mix(.04, .7, metal)*(.2+.8*fres)*ao;
+  col+=vec3(1., .93, .75)*emis*3.;
+  return col;
+}
+
 // ---- water
+float ripples(vec2 q) {
+  float h=0.;
+  for(int i=0; i<6; i++) {
+    vec4 r=uRip[i];
+    float age=uTime-r.z;
+    if(age>0.&&age<5.&&r.w>0.) {
+      float d=length(q-r.xy)-age*2.;
+      h+=r.w*exp(-age*.8)*exp(-d*d*2.)*sin(d*7.);
+    }
+  }
+  return h*.12;
+}
 float wv(vec2 q, bool hi) { // hi: include fine ripples (skipped far away)
   float t=uTime;
   float w=.18*sin(dot(q, vec2(.31, .21))+t*1.1)+.12*sin(dot(q, vec2(-.22, .41))+t*1.4)+.07*sin(dot(q, vec2(.9, -.5))+t*2.1)+.04*sin(dot(q, vec2(-.7, -1.1))+t*2.7);
   if(hi)w+=.1*nz(q*.9+vec2(t*.5, t*.3))+.03*nz(q*3.+vec2(t*.8, -t*.6))+.015*nz(q*7.-vec2(t, t*.7));
+  if(hi)w+=ripples(q);
   return w;
 }
 
@@ -472,6 +905,18 @@ vec3 water(vec3 p, vec3 rd, float t) {
   float fb=ss(.9, 0., dep+.12*sin(uTime*1.2+nz(q*.7)*6.));
   float fn=nz(q*2.5+uTime*.3)*.6+nz(q*7.-uTime*.2)*.4;
   float foam=fb*ss(.35, .75, fn+fb*.45)+fb*ss(.85, 1., sin(dep*7.-uTime*1.6))*.5;
+  if(uObjMode>1.5) {
+    // kayak: foam around the hull and a V-shaped wake behind it
+    vec3 lw=toLocalPt(p);
+    float he=length(vec2(lw.x/.45, lw.z/1.9));
+    float wz=-lw.z;
+    float wk=ss(1.5, 1., he)*.8;
+    if(wz>0.&&wz<16.) {
+      float arm=.45+.16*wz;
+      wk+=exp(-pow((abs(lw.x)-arm)/(.1+.03*wz), 2.))*exp(-wz*.15)*clamp(uObj2.w*.5, 0., 1.);
+    }
+    foam=max(foam, clamp(wk, 0., 1.)*.9);
+  }
   col=mix(col, (sunCol*.3+ambCol*1.3)*.9, clamp(foam, 0., 1.)*.9);
   return col;
 }
@@ -515,11 +960,20 @@ void main() {
     float dt=max(lim, 0.)*(t<120.?.5:.7);
     if(uOpt.y>.5&&hh<17.&&t<(uLow>.5?150.:380.)) {
       float td=treeD(p);
-      if(td<.03+.0007*t) {
+      bool meshTree=uMeshR>0.&&tOk&&length(tC-uCam.xz)<uMeshR;
+      if(!meshTree&&td<.03+.0007*t) {
         hit=gLeaf?3:2;
         break;
       }
-      dt=min(dt, td*.8);
+      if(!meshTree)dt=min(dt, td*.8);
+    }
+    if(uCamp>.5&&hh<9.&&t<(uLow>.5?160.:300.)) {
+      float cdist=campD(p);
+      if(cdist<.03+.0007*t) {
+        hit=5;
+        break;
+      }
+      dt=min(dt, cdist*.8);
     }
     if(uOpt.z>.5&&hh>0.&&hh<1.3&&t<55.) {
       if(grassIn(p.xz, hh, g, t)) {
@@ -536,14 +990,24 @@ void main() {
   }
   if(hit<0&&t<tmax*.9)hit=0;
   vec3 p=ro+rd*t, col;
-  if(hit<0) {
+  float tO=-1.;
+  vec3 oLo=vec3(0.), oLd=vec3(0.);
+  if(uObjMode>.5) {
+    oLo=toLocalPt(ro);
+    oLd=toLocalDir(rd);
+    tO=traceObj(oLo, oLd);
+  }
+  bool useObj=tO>-.5&&(tO<t||(hit==1&&tO<3.));
+  if(useObj) {
+    col=shadeObj(oLo, oLd, tO, rd);
+  } else if(hit<0) {
     col=sky(vec3(rd.x, max(rd.y, 0.), rd.z));
   }   else {
     if(hit==4) {
       col=water(p, rd, t);
     }    else {
       vec3 n, alb;
-      float ao=1., w=0., bl=0.;
+      float ao=1., w=0., bl=0., emisK=0.;
       float g=H(p.xz);
       if(hit<=1) {
         float e=.08+.002*t;
@@ -561,6 +1025,7 @@ void main() {
         vec3 rc=mix(vec3(.32, .27, .22), vec3(.55, .36, .2), ss(.3, .7, nz(vec2(p.x*.03+p.z*.03, g*.35))))*(.6+.7*nz(p.xz*.25+g*.5))*(.85+.3*sin(g*2.5+nz(p.xz*.1)*4.));
         rc=mix(rc, textureLod(uRock, vec2(p.x+p.z, p.y)*.1, lodFor(t, .1)).rgb*1.1, .65);
         alb=mix(mix(gc, rc, rock), sc, sand*(1.-rock));
+        alb=mix(alb, vec3(.92, .94, .98), ss(1.2, 1.9, uSeason)*ss(.35, .8, n.y)); // snow
         // fine detail, faded with distance to avoid shimmering
         float lod=1.-ss(30., 140., t);
         if(uLow<.5&&lod>0.) {
@@ -578,6 +1043,7 @@ void main() {
           alb=mix(vec3(.01, .07, .01), vec3(.3, .62, .06)*(.8+.5*gTint), pow(gS, .8))*(.55+.9*gw);
           alb=mix(alb, vec3(.75, .8, .15)*gS*gS, .35*ss(.6, .9, gw));
           alb=mix(alb, alb*vec3(1.6, 1.3, .6), .5*dry);
+          alb=mix(alb, alb*vec3(1.5, 1.1, .5), .6*autumnK());
           // wildflowers: a few tall tufts carry white or yellow blossoms near their tips
           float fl=step(.945, gTint)*ss(.55, .7, gS);
           alb=mix(alb, mix(vec3(.95, .95, .88), vec3(.95, .78, .1), step(.975, gTint)), fl*.9);
@@ -587,6 +1053,20 @@ void main() {
           w=.35;
           bl=gS;
         }
+      } else if(hit==5) {
+        float e=.03+.001*t;
+        vec2 k=vec2(1, -1)*e;
+        n=normalize(k.xyy*campD(p+k.xyy)+k.yyx*campD(p+k.yyx)+k.yxy*campD(p+k.yxy)+k.xxx*campD(p+k.xxx));
+        campD(p);
+        float cm=gCm;
+        if(cm<1.5)alb=mix(vec3(.55, .42, .18), vec3(.33, .26, .1), nz(p.xz*9.+p.y*7.))*(.75+.25*sin(p.y*38.+nz(p.xz*5.)*3.));
+        else if(cm<2.5)alb=vec3(.25, .15, .08)*(.7+.6*nz(vec2(p.x+p.z, p.y)*8.));
+        else if(cm<3.5)alb=vec3(.35, .34, .33)*(.6+.8*nz(p.xz*14.+p.y*5.));
+        else if(cm<4.5)alb=vec3(.04);
+        else if(cm<6.5)alb=vec3(1., .5, .1);
+        else alb=cSd<.33?vec3(.85, .35, .05):(cSd<.66?vec3(.1, .4, .15):vec3(.1, .25, .7));
+        ao=.7;
+        emisK=(cm>4.5&&cm<6.5)?1.:0.;
       } else {
         float e=.06+.002*t;
         vec2 k=vec2(1, -1)*e;
@@ -594,15 +1074,29 @@ void main() {
         treeD(p);
         if(gLeaf) {
           vec3 lc=mix(vec3(.06, .18, .03), vec3(.22, .38, .06), gTT);
-          lc=mix(lc, vec3(.6, .4, .06), step(.84, gTT));
+          if(gSp<.5)lc=mix(vec3(.26, .42, .08), vec3(.42, .5, .1), gTT); // birch: light fresh green
+          else if(gSp<1.5)lc=mix(vec3(.05, .15, .03), vec3(.14, .3, .05), gTT); // oak: dark green
+          lc=mix(lc, vec3(.6, .4, .06), step(.9, gTT)*.6);
+          vec3 fall=gSp<.5?vec3(.85, .65, .08):(gSp<1.5?vec3(.62, .3, .05):vec3(.75, .45, .06));
+          lc=mix(lc, fall*(.7+.5*gTT), autumnK());
           alb=lc*(.65+.7*nz(p.xz*2.5+p.y*1.7));
           ao=.4+.6*ss(-.8, .8, n.y);
           w=.35;
           bl=1.;
         } else {
-          alb=vec3(.2, .14, .09)*(.7+.6*nz(vec2(p.y*3., p.x+p.z)*1.5));
+          vec3 bark=vec3(.2, .14, .09);
+          if(gSp<.5) {
+            // birch: white bark with dark horizontal marks
+            float mk=step(.74, nz(vec2(p.y*7.+gTT*20., p.x*5.+p.z*5.)));
+            bark=mix(vec3(.82, .81, .76), vec3(.05), mk);
+          } else if(gSp<1.5)bark=vec3(.12, .09, .06);
+          alb=bark*(.7+.6*nz(vec2(p.y*3., p.x+p.z)*1.5));
           ao=.7;
         }
+      }
+      if(uObjMode>.5&&uObjMode<1.5) {
+        vec3 lb=toLocalPt(p);
+        alb*=1.-.5*exp(-lb.x*lb.x*16.-pow(abs(lb.z)*.85, 4.)); // soft shadow under the bicycle
       }
       alb*=1.-.3*uRain; // wet surfaces are darker
       float ndl=clamp((dot(n, L)+w)/(1.+w), 0., 1.);
@@ -610,6 +1104,17 @@ void main() {
       if(uOpt.x>.5&&ndl>.001&&sunCol.x+sunCol.y>.01&&t<350.)sh=shadow(p+n*.1, L);
       col=alb*(sunCol*ndl*sh+ambCol*(.55+.45*n.y)*ao);
       col+=alb*sunCol*sh*pow(max(dot(rd, L), 0.), 4.)*.25*bl;
+      if(emisK>.5)col=vec3(1., .55, .15)*(2.5+.8*sin(uTime*12.+p.y*8.));
+      if(uCamp>.5&&t<260.) {
+        // the campfire lights up everything around it
+        campCell(p.xz);
+        if(cOk) {
+          vec3 fv=vec3(cC.x, cGy+.5, cC.y)-p;
+          float fd=max(length(fv), .01);
+          float fi=(.85+.15*sin(uTime*13.)+.1*sin(uTime*7.3))/(1.+fd*fd*.06);
+          col+=alb*vec3(1., .5, .2)*fi*max(dot(n, fv/fd), 0.)*(1.4-dayf*.9)*ss(45., 8., fd);
+        }
+      }
       if(uLamp>.5) {
         // bicycle headlight: a warm cone along the view direction
         vec3 lv=p-ro;
@@ -620,6 +1125,8 @@ void main() {
       }
     }
     float f=1.-exp(-pow(t/(450.-260.*uRain), 1.6));
+    float mist=ss(.4, .02, sunE)*ss(-.1, 0., sunE); // thin ground mist around sunrise and sunset
+    f=1.-(1.-f)*exp(-mist*t*.004*exp(-max(p.y, 0.)*.03));
     col=mix(col, skyBase(normalize(vec3(rd.x, min(rd.y, .12), rd.z))), f);
   }
   col*=1.15;
@@ -631,6 +1138,9 @@ void main() {
   col*=1.-dot(vq, vq)*.85;
   col=pow(clamp(col, 0., 1.), vec3(.4545));
   col+=(hs(ivec2(gl_FragCoord.xy)+ivec2(int(uTime*30.))*37)-.5)/70.;
+  // depth of what this pixel shows, so the real 3D tree models drawn afterwards are hidden correctly
+  float dT=useObj?tO:(hit<0?-1.:t);
+  gl_FragDepth=dT<0.?1.:((FAR+NEAR)/(FAR-NEAR)-2.*FAR*NEAR/((FAR-NEAR)*max(dT*dot(rd, uF), NEAR)))*.5+.5;
   oc=vec4(col, 1.);
 }
 
@@ -700,7 +1210,7 @@ if(!gl) {
   gl.useProgram(pg);
   const U= {
   };
-  ['uRes', 'uWind', 'uTime', 'uCam', 'uF', 'uR', 'uU', 'uSun', 'uSand', 'uPeb', 'uGrass', 'uRock', 'uOpt', 'uLow', 'uRain', 'uLamp', 'uFoc'].forEach(n=>U[n]=gl.getUniformLocation(pg, n));
+  ['uRes', 'uWind', 'uTime', 'uCam', 'uF', 'uR', 'uU', 'uSun', 'uSand', 'uPeb', 'uGrass', 'uRock', 'uOpt', 'uLow', 'uRain', 'uLamp', 'uFoc', 'uSkinB', 'uSkinK', 'uCamp', 'uMeshR', 'uBow', 'uObj', 'uObj2', 'uObjMode', 'uThird', 'uSeason', 'uRip'].forEach(n=>U[n]=gl.getUniformLocation(pg, n));
 // Textures cut from the supplied photos (sand, pebbles, grass, rock), mirror-tiled so they repeat seamlessly
 const TEX_DATA = [
   "data:image/jpeg;base64,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",
@@ -729,7 +1239,7 @@ TEX_DATA.forEach((src, unit) => {
 });
   const $=id=>document.getElementById(id);
   const cam= {
-    x:0, z:0, y:40, yaw:.6, pitch:-.15
+    x:0, z:0, y:40, yaw:.6, pitch:-.22
   };
   let time=0, hour=9.5, maxScale=Math.min(window.devicePixelRatio||1, 2), scale=maxScale*.4, ft=16, fc=0, frameMin=16;
   const keys= {
@@ -768,13 +1278,22 @@ TEX_DATA.forEach((src, unit) => {
   }
   let last=performance.now();
   // ================= rider state: bicycle on land, kayak on water =================
-  const ride = { mode: 'bike', speed: 0, ph: 0, pad: 0, pOff: 0, steer: 0, lastYaw: cam.yaw, lastPad: 0, stam: 1, sprintHeld: false };
+  const ride = { mode: 'bike', speed: 0, ph: 0, pad: 0, pOff: 0, steer: 0, lastYaw: cam.yaw, lastPad: 0, stam: 1, sprintHeld: false, wheel: 0, crank: 0 };
   function waveH(x, z, t) {
     // same low-frequency waves as the water shader, used to rock the kayak
     return .18*Math.sin(x*.31+z*.21+t*1.1)+.12*Math.sin(-x*.22+z*.41+t*1.4)+.07*Math.sin(x*.9-z*.5+t*2.1)+.04*Math.sin(-x*.7-z*1.1+t*2.7);
   }
   let msgTimer = 0;
-  let foc = 1.3, rainLevel = 0, flash = 0, thunderT = 12, shot = false, lampState = 0, lampOn = false, btnRun = false;
+  const ripples = new Float32Array(24); // water ripples sent to the shader: x, z, start time, strength
+  let ripIdx = 0, viewTP = false, seasonLevel = 0, fishT = 8;
+  function addRipple(x, z, strength) {
+    ripples[ripIdx * 4] = x;
+    ripples[ripIdx * 4 + 1] = z;
+    ripples[ripIdx * 4 + 2] = time;
+    ripples[ripIdx * 4 + 3] = strength;
+    ripIdx = (ripIdx + 1) % 6;
+  }
+  let foc = 1.15, rainLevel = 0, flash = 0, thunderT = 12, shot = false, lampState = 0, lampOn = false, btnRun = false;
   function showMsg(text) {
     const el = $('msg');
     el.textContent = text;
@@ -831,6 +1350,7 @@ TEX_DATA.forEach((src, unit) => {
     sfx.grass = noiseLoop(ctx, sfx.white, 'highpass', 3500, .5);
     sfx.tire = noiseLoop(ctx, brown, 'lowpass', 250, .5);
     sfx.rain = noiseLoop(ctx, sfx.white, 'bandpass', 3200, .35);
+    sfx.fire = noiseLoop(ctx, sfx.white, 'bandpass', 1800, .8);
     sfx.brown = brown;
     // night crickets: a high tone chopped on and off by a square LFO
     const carrier = ctx.createOscillator();
@@ -904,6 +1424,21 @@ TEX_DATA.forEach((src, unit) => {
     g.connect(sfx.master);
     src.start(t, Math.random(), .5);
   }
+  function plop() {
+    // a fish jumping: a short falling sine blip
+    const ctx = sfx.ctx;
+    if(!ctx||!$('snd').checked)return;
+    const t = ctx.currentTime + .05;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.setValueAtTime(520, t);
+    o.frequency.exponentialRampToValueAtTime(140, t + .16);
+    g.gain.setValueAtTime(.14, t);
+    g.gain.exponentialRampToValueAtTime(.001, t + .2);
+    o.connect(g);
+    g.connect(sfx.master);
+    o.start(t);
+    o.stop(t + .22);
+  }
   function bell() {
     const ctx = sfx.ctx;
     if(!ctx||!$('snd').checked)return;
@@ -955,7 +1490,9 @@ TEX_DATA.forEach((src, unit) => {
     const sp = Math.min(1, ride.speed / 10);
     sfx.grass.g.gain.setTargetAtTime(bike ? sp * .035 : 0, t, .2);
     sfx.tire.g.gain.setTargetAtTime(bike ? sp * .06 : 0, t, .2);
-    sfx.rain.g.gain.setTargetAtTime(rainLevel * .14, t, .5);
+    sfx.rain.g.gain.setTargetAtTime(rainLevel * .14 * (seasonLevel > 1.5 ? .25 : 1), t, .5);
+    const cd = frame.camD||999;
+    sfx.fire.g.gain.setTargetAtTime(cd < 50 ? (1 - cd / 50) * .07 * (.4 + Math.random()) : 0, t, .05);
     const night = Math.max(0, Math.min(1, (.1 - sunE) / .25));
     sfx.cricket.gain.setTargetAtTime(night * .012, t, .5);
     sfx.birdT -= dt;
@@ -980,6 +1517,7 @@ TEX_DATA.forEach((src, unit) => {
       ride.mode = 'kayak';
       showMsg('Вы пересели на каяк');
       splash(1);
+      addRipple(cam.x, cam.z, 1.5);
     } else if(ride.mode === 'kayak'&&ground > .15) {
       ride.mode = 'bike';
       showMsg('Вы пересели на велосипед');
@@ -1011,17 +1549,23 @@ TEX_DATA.forEach((src, unit) => {
     cam.z += vz * dt;
     const g2 = Math.max(H(cam.x, cam.z), 0);
     ride.ph += ride.speed * dt * 1.3;
+    ride.wheel += ride.speed * dt / .34;
+    ride.crank += ride.speed * dt * 2.2;
     let eye;
     if(ride.mode === 'bike') {
       const k = Math.min(1, ride.speed / 5);
-      eye = g2 + 1.55 + Math.sin(ride.ph) * .035 * k;
+      eye = g2 + 1.4 + Math.sin(ride.ph) * .02 * k + (nz(cam.x * 2, cam.z * 2) - .5) * .03 * k;
       ride.pOff = Math.sin(ride.ph * 2) * .006 * k;
     } else {
-      eye = .65 + waveH(cam.x, cam.z, time) * .7;
+      eye = .86 + waveH(cam.x, cam.z, time) * .7;
       ride.pOff = (waveH(cam.x+fx*2, cam.z+fz*2, time) - waveH(cam.x, cam.z, time)) * .3;
       ride.pad += dt * (1.2 + ride.speed * .8);
       const sn = Math.sin(ride.pad * 2.2);
-      if(sn * ride.lastPad < 0&&ride.speed > .3)splash(.5);
+      if(sn * ride.lastPad < 0&&ride.speed > .3) {
+        splash(.5);
+        const side = sn > 0 ? 1 : -1;
+        addRipple(cam.x + fx * .9 - fz * side, cam.z + fz * .9 + fx * side, .8);
+      }
       ride.lastPad = sn;
     }
     cam.y += (eye - cam.y) * Math.min(1, dt * 10);
@@ -1221,12 +1765,12 @@ TEX_DATA.forEach((src, unit) => {
   function drawRain(dt, W, Hh, windX) {
     if(rainLevel > .02) {
       const n = Math.floor(drops.length * Math.min(1, rainLevel));
-      octx.strokeStyle = 'rgba(200,215,230,' + (.25 + .25 * rainLevel) + ')';
+      octx.strokeStyle = seasonLevel > 1.5 ? 'rgba(255,255,255,.85)' : 'rgba(200,215,230,' + (.25 + .25 * rainLevel) + ')';
       octx.lineWidth = 1.2;
       octx.beginPath();
       for(let i = 0; i < n; i++) {
         const d = drops[i];
-        d.y += d.v * dt * 1.6;
+        d.y += d.v * dt * (seasonLevel > 1.5 ? .35 : 1.6);
         d.x += windX * .03 * dt;
         d.x -= Math.floor(d.x);
         if(d.y > 1) {
@@ -1234,14 +1778,176 @@ TEX_DATA.forEach((src, unit) => {
           d.x = Math.random();
         }
         const x = d.x * W, y = d.y * Hh;
-        octx.moveTo(x, y);
-        octx.lineTo(x - windX * 2.4, y + d.l * Hh);
+        if(seasonLevel > 1.5) {
+          octx.moveTo(x + 2, y);
+          octx.arc(x, y, 2, 0, 6.28);
+        } else {
+          octx.moveTo(x, y);
+          octx.lineTo(x - windX * 2.4, y + d.l * Hh);
+        }
       }
       octx.stroke();
     }
     if(flash > .01) {
       octx.fillStyle = 'rgba(255,255,255,' + Math.min(.85, flash * .8) + ')';
       octx.fillRect(0, 0, W, Hh);
+    }
+  }
+  // mini-map: terrain around the rider, the top of the circle is the direction of travel
+  const mm = document.createElement('canvas');
+  mm.width = mm.height = 64;
+  const mmx = mm.getContext('2d');
+  function updateMinimap() {
+    const img = mmx.createImageData(64, 64), scale = 6;
+    for(let j = 0; j < 64; j++) {
+      for(let i = 0; i < 64; i++) {
+        const h = H(cam.x - (i - 32) * scale, cam.z + (32 - j) * scale);
+        let r, g, b;
+        if(h < 0) {
+          r = 45;
+          g = 105;
+          b = 175;
+        } else if(h < 1.6) {
+          r = 205;
+          g = 185;
+          b = 130;
+        } else if(h < 22) {
+          const k = 1 - h / 60;
+          r = 70 * k;
+          g = 135 * k;
+          b = 60 * k;
+        } else {
+          r = 130;
+          g = 115;
+          b = 95;
+        }
+        const o = (j * 64 + i) * 4;
+        img.data[o] = r;
+        img.data[o + 1] = g;
+        img.data[o + 2] = b;
+        img.data[o + 3] = 255;
+      }
+    }
+    mmx.putImageData(img, 0, 0);
+  }
+  function drawMinimap(W) {
+    if(!$('o_mm').checked)return;
+    const r = 46, cx = W - 60, cy = 110;
+    octx.save();
+    octx.beginPath();
+    octx.arc(cx, cy, r, 0, 6.28);
+    octx.clip();
+    octx.translate(cx, cy);
+    octx.rotate(cam.yaw);
+    octx.drawImage(mm, -r, -r, 2 * r, 2 * r);
+    for(const c of (frame.camList||[])) {
+      const mx = -(c.x - cam.x) / 6 * (2 * r / 64), my = -(c.z - cam.z) / 6 * (2 * r / 64);
+      if(Math.hypot(mx, my) > r - 3)continue;
+      octx.fillStyle = '#ff8a1c';
+      octx.beginPath();
+      octx.arc(mx, my, 3, 0, 6.28);
+      octx.fill();
+    }
+    octx.restore();
+    octx.strokeStyle = 'rgba(255,255,255,.7)';
+    octx.lineWidth = 2;
+    octx.beginPath();
+    octx.arc(cx, cy, r, 0, 6.28);
+    octx.stroke();
+    octx.fillStyle = '#fff';
+    octx.beginPath();
+    octx.moveTo(cx, cy - 9);
+    octx.lineTo(cx + 6, cy + 7);
+    octx.lineTo(cx - 6, cy + 7);
+    octx.closePath();
+    octx.fill();
+  }
+  const glowFlies = [];
+  for(let i = 0; i < 14; i++)glowFlies.push({ x: 0, z: 0, ph: Math.random() * 6.28, init: false });
+  function drawFireflies(dt, W, Hh, F, R, Uv, sunE) {
+    if(sunE > .08||sunE < -.45||rainLevel > .3||seasonLevel > 1.5)return;
+    octx.save();
+    octx.globalCompositeOperation = 'lighter';
+    for(const b of glowFlies) {
+      if(!b.init||Math.hypot(b.x - cam.x, b.z - cam.z) > 35) {
+        const a = Math.random() * 6.28, d = 5 + Math.random() * 25;
+        b.x = cam.x + F[0] * 10 + Math.sin(a) * d;
+        b.z = cam.z + F[2] * 10 + Math.cos(a) * d;
+        b.init = true;
+      }
+      b.ph += dt * 2;
+      b.x += Math.sin(b.ph * .7) * dt * .8;
+      b.z += Math.cos(b.ph * .6) * dt * .8;
+      const y = Math.max(H(b.x, b.z), 0) + 1.3 + Math.sin(b.ph * 1.1) * .5;
+      const pr = project(b.x, y, b.z, F, R, Uv, W, Hh);
+      if(!pr||pr[0] < -20||pr[0] > W + 20||pr[1] < -20||pr[1] > Hh + 20)continue;
+      const blink = Math.max(0, Math.sin(b.ph * 3)), rad = Math.max(2, .25 / pr[2] * foc * Hh);
+      const g = octx.createRadialGradient(pr[0], pr[1], 0, pr[0], pr[1], rad * 3);
+      g.addColorStop(0, 'rgba(220,255,120,' + (.9 * blink) + ')');
+      g.addColorStop(1, 'rgba(220,255,120,0)');
+      octx.fillStyle = g;
+      octx.beginPath();
+      octx.arc(pr[0], pr[1], rad * 3, 0, 6.28);
+      octx.fill();
+    }
+    octx.restore();
+  }
+  const fireflies = [];
+  for(let i = 0; i < 16; i++)fireflies.push({ x: 0, z: 0, ph: Math.random() * 6.28, init: false });
+  function drawFireflies(dt, W, Hh, F, R, Uv, sunE) {
+    if(sunE > -.05||rainLevel > .3||seasonLevel > 1.5||$('md').value === 'fly')return;
+    for(const b of fireflies) {
+      if(!b.init||Math.hypot(b.x - cam.x, b.z - cam.z) > 35) {
+        const a = Math.random() * 6.28, d = 5 + Math.random() * 25;
+        b.x = cam.x + F[0] * 10 + Math.sin(a) * d;
+        b.z = cam.z + F[2] * 10 + Math.cos(a) * d;
+        b.init = true;
+      }
+      b.ph += dt;
+      b.x += Math.sin(b.ph * .9) * dt * .8;
+      b.z += Math.cos(b.ph * .7) * dt * .8;
+      const y = Math.max(H(b.x, b.z), 0) + .6 + Math.sin(b.ph * 1.7) * .5;
+      const pr = project(b.x, y, b.z, F, R, Uv, W, Hh);
+      if(!pr||pr[0] < -20||pr[0] > W + 20||pr[1] < -20||pr[1] > Hh + 20)continue;
+      const blink = Math.max(0, Math.sin(time * 2.2 + b.ph * 3));
+      if(blink < .05)continue;
+      const rad = Math.max(2, .35 / pr[2] * foc * Hh) * (.6 + blink);
+      const g = octx.createRadialGradient(pr[0], pr[1], 0, pr[0], pr[1], rad);
+      g.addColorStop(0, 'rgba(200,255,100,' + blink + ')');
+      g.addColorStop(1, 'rgba(200,255,100,0)');
+      octx.fillStyle = g;
+      octx.beginPath();
+      octx.arc(pr[0], pr[1], rad, 0, 6.28);
+      octx.fill();
+    }
+  }
+  const shoot = { life: 0, next: 5, x: 0, y: 0, vx: 0, vy: 0 };
+  function drawShooting(dt, W, Hh, sunE) {
+    if(sunE > -.1||rainLevel > .3)return;
+    shoot.next -= dt;
+    if(shoot.next <= 0&&shoot.life <= 0) {
+      shoot.life = .8;
+      shoot.next = 6 + Math.random() * 14;
+      shoot.x = W * (.1 + Math.random() * .8);
+      shoot.y = Hh * (.04 + Math.random() * .3);
+      const a = .35 + Math.random() * .5, sp = Hh * (.9 + Math.random() * .6);
+      shoot.vx = Math.cos(a) * sp * (Math.random() < .5 ? 1 : -1);
+      shoot.vy = Math.sin(a) * sp;
+    }
+    if(shoot.life > 0) {
+      shoot.life -= dt;
+      shoot.x += shoot.vx * dt;
+      shoot.y += shoot.vy * dt;
+      const tx = shoot.x - shoot.vx * .18, ty = shoot.y - shoot.vy * .18;
+      const g = octx.createLinearGradient(shoot.x, shoot.y, tx, ty);
+      g.addColorStop(0, 'rgba(255,255,255,' + Math.max(0, shoot.life) + ')');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      octx.strokeStyle = g;
+      octx.lineWidth = 2;
+      octx.beginPath();
+      octx.moveTo(shoot.x, shoot.y);
+      octx.lineTo(tx, ty);
+      octx.stroke();
     }
   }
   function drawStamina(W) {
@@ -1262,16 +1968,563 @@ TEX_DATA.forEach((src, unit) => {
     octx.clearRect(0, 0, W, Hh);
     drawBirds(dt, W, Hh, F, R, Uv, sunE);
     drawButterflies(dt, W, Hh, F, R, Uv, sunE);
-    if($('md').value !== 'fly') {
-      if(ride.mode === 'bike')drawBike(W, Hh);
-      else drawKayak(W, Hh);
-    }
+    drawShooting(dt, W, Hh, sunE);
+    drawFireflies(dt, W, Hh, F, R, Uv, sunE);
+    drawFireflies(dt, W, Hh, F, R, Uv, sunE);
     drawRain(dt, W, Hh, frame.wx||0);
     drawStamina(W);
+    drawMinimap(W);
   }
   showMsg('Вы едете на велосипеде');
 
   // ================= touch joystick, action buttons, saved settings =================
+  // ================= camps: same placement rules as the shader, used for sound, hints and the map =================
+  function campAt(ix, iz) {
+    if(!(hs(ix+91, iz+7) < .5))return null;
+    const cx = (ix + .2 + .6 * hs(ix+33, iz+5)) * 110, cz = (iz + .2 + .6 * hs(ix+8, iz+61)) * 110;
+    const gy = H(cx, cz);
+    const sl = Math.abs(H(cx+4, cz) - gy) + Math.abs(H(cx, cz+4) - gy) + Math.abs(H(cx-4, cz) - gy) + Math.abs(H(cx, cz-4) - gy);
+    if(!(gy > 2.6&&gy < 16&&sl < 3.6))return null;
+    return { x: cx, z: cz, id: ix + ',' + iz };
+  }
+  function camsAround(x, z) {
+    const ix = Math.floor(x / 110), iz = Math.floor(z / 110), list = [];
+    for(let dx = -2; dx <= 2; dx++) {
+      for(let dz = -2; dz <= 2; dz++) {
+        const c = campAt(ix + dx, iz + dz);
+        if(c)list.push(c);
+      }
+    }
+    return list;
+  }
+  function nearestCamp(x, z) {
+    let best = null, bd = 1e9;
+    for(const c of camsAround(x, z)) {
+      const d = Math.hypot(c.x - x, c.z - z);
+      if(d < bd) {
+        bd = d;
+        best = c;
+      }
+    }
+    return best ? { c: best, d: bd } : null;
+  }
+  const foundCamps = new Set();
+  const POWER = {
+    vweak: { lo: 1, o_sh: 0, o_tr: 1, o_gr: 0, o_rf: 0, o_cp: 1, mt: '0', ql: 'auto', fpt: '30' },
+    weak: { lo: 1, o_sh: 0, o_tr: 1, o_gr: 1, o_rf: 0, o_cp: 1, mt: '0', ql: 'auto', fpt: '30' },
+    mid: { lo: 0, o_sh: 0, o_tr: 1, o_gr: 1, o_rf: 1, o_cp: 1, mt: '1', ql: 'auto', fpt: '60' },
+    strong: { lo: 0, o_sh: 1, o_tr: 1, o_gr: 1, o_rf: 1, o_cp: 1, mt: '2', ql: '1080', fpt: '60' },
+    ultra: { lo: 0, o_sh: 1, o_tr: 1, o_gr: 1, o_rf: 1, o_cp: 1, mt: '2', ql: '1440', fpt: '60' }
+  };
+  $('pf').addEventListener('change', ()=> {
+    const P = POWER[$('pf').value];
+    if(!P)return;
+    for(const id in P) {
+      const el = $(id);
+      if(el.type === 'checkbox')el.checked = !!P[id];
+      else el.value = P[id];
+    }
+    showMsg('Профиль применён: ' + $('pf').options[$('pf').selectedIndex].text);
+  });
+  // ================= real 3D trees: birch and oak grown with the algorithm from the supplied files =================
+function makeBirchBarkTexture() {
+  const S = 512; const c = document.createElement('canvas'); c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#e8e8e0'; 
+  ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 100; i++) {
+    const x = Math.random() * S, y = Math.random() * S;
+    const r = 10 + Math.random() * 40;
+    ctx.fillStyle = `rgba(150, 150, 140, ${0.05 + Math.random() * 0.1})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  for (let i = 0; i < 150; i++) {
+    const x = Math.random() * S, y = Math.random() * S;
+    const w = 10 + Math.random() * 40;
+    const h = 1 + Math.random() * 3;
+    ctx.fillStyle = `rgba(20, 20, 20, ${0.6 + Math.random() * 0.4})`;
+    ctx.beginPath(); 
+    ctx.ellipse(x, y, w/2, h/2, (Math.random()-0.5)*0.2, 0, Math.PI*2); 
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 50; i++) {
+    let x = Math.random() * S, y = Math.random() * S;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let j = 0; j < 4; j++) {
+      x += (Math.random() - 0.5) * 10;
+      y += 5 + Math.random() * 15;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  return c;
+}
+function makeBirchLeafTexture() {
+  const W = 128, H = 128; const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d'); ctx.clearRect(0, 0, W, H);
+  ctx.beginPath();
+  ctx.moveTo(W/2, 10);
+  ctx.bezierCurveTo(W-20, H/4, W-10, H*3/4, W/2, H-10);
+  ctx.bezierCurveTo(10, H*3/4, 20, H/4, W/2, 10);
+  const grad = ctx.createLinearGradient(W/2, 10, W/2, H-10);
+  grad.addColorStop(0.00, '#9ccc65'); 
+  grad.addColorStop(0.50, '#7cb342'); 
+  grad.addColorStop(1.00, '#558b2f');
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.strokeStyle = 'rgba(50,80,20,0.4)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.strokeStyle = 'rgba(50,80,20,0.6)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(W/2, H-15); ctx.lineTo(W/2, 15); ctx.stroke();
+  for (let i = 1; i < 6; i++) {
+    const y = H - (i/6) * H;
+    ctx.beginPath(); ctx.moveTo(W/2, y); ctx.lineTo(W/2 + 20, y - 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2, y); ctx.lineTo(W/2 - 20, y - 10); ctx.stroke();
+  }
+  return c;
+}
+function makeOakBarkTexture() {
+  const S = 512; const c = document.createElement('canvas'); c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#6b5c4b'; ctx.fillRect(0, 0, S, S);
+  for (let i = 0; i < 240; i++) {
+    const x = Math.random() * S, y = Math.random() * S;
+    const w = 4 + Math.random() * 24, h = 70 + Math.random() * 280;
+    const light = Math.random() > 0.5;
+    const col = light
+      ? `rgba(${118 + (Math.random() * 46 | 0)}, ${102 + (Math.random() * 38 | 0)}, ${80 + (Math.random() * 32 | 0)}, 0.45)`
+      : `rgba(${36 + (Math.random() * 30 | 0)}, ${29 + (Math.random() * 24 | 0)}, ${21 + (Math.random() * 20 | 0)}, 0.55)`;
+    ctx.fillStyle = col;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        ctx.beginPath(); ctx.ellipse(x + ox * S, y + oy * S, w * 0.5, h * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  const img = ctx.getImageData(0, 0, S, S); const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * 36;
+    d[i] = Math.max(0, Math.min(255, d[i] + n));
+    d[i+1] = Math.max(0, Math.min(255, d[i+1] + n * 0.95));
+    d[i+2] = Math.max(0, Math.min(255, d[i+2] + n * 0.9));
+  }
+  ctx.putImageData(img, 0, 0);
+  ctx.strokeStyle = 'rgba(24,17,11,0.5)'; ctx.lineCap = 'round';
+  for (let i = 0; i < 110; i++) {
+    ctx.lineWidth = 1 + Math.random() * 2.6;
+    let x = Math.random() * S, y = Math.random() * S;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    const steps = 4 + (Math.random() * 7 | 0);
+    for (let j = 0; j < steps; j++) {
+      x += (Math.random() - 0.5) * 12; y += 18 + Math.random() * 46;
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  return c;
+}
+function makeOakLeafTexture() {
+  const W = 128, H = 256; const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const ctx = c.getContext('2d'); ctx.clearRect(0, 0, W, H);
+  const cx = W / 2, top = 10, bottom = H - 8, len = bottom - top, maxW = W * 0.94;
+
+  function halfW(t) {
+    if (t <= 0.002 || t >= 0.998) return 0;
+    const env = Math.pow(Math.sin(Math.PI * t), 0.42);
+    const lobes = 0.56 + 0.44 * Math.abs(Math.sin(Math.PI * 3.15 * t + 0.32));
+    return env * lobes * 0.5;
+  }
+
+  const N = 150;
+  ctx.beginPath();
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, y = bottom - t * len, x = cx + halfW(t) * maxW;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  for (let i = N; i >= 0; i--) {
+    const t = i / N, y = bottom - t * len, x = cx - halfW(t) * maxW;
+    ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+
+  const grad = ctx.createLinearGradient(cx, top, cx, bottom);
+  grad.addColorStop(0.00, '#69a13c'); grad.addColorStop(0.45, '#4a7d28'); grad.addColorStop(1.00, '#31591b');
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.strokeStyle = 'rgba(28,48,16,0.55)'; ctx.lineWidth = 2; ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(38,66,22,0.9)'; ctx.lineWidth = 3.2; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx, bottom - 3); ctx.lineTo(cx, top + 8); ctx.stroke();
+
+  ctx.lineWidth = 1.3; ctx.strokeStyle = 'rgba(38,66,22,0.45)';
+  for (let i = 1; i < 10; i++) {
+    const t = i / 11, y = bottom - t * len, w = halfW(t) * maxW * 0.86;
+    ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx + w, y - 15); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx - w, y - 15); ctx.stroke();
+  }
+  ctx.strokeStyle = '#4a6b2a'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cx, bottom); ctx.lineTo(cx, bottom - 14); ctx.stroke();
+  return c;
+}
+
+  let meshRNow = 0;
+  function mulberry32(a) {
+    return function() {
+      a |= 0;
+      a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  const vadd = (a, b)=>[a[0]+b[0], a[1]+b[1], a[2]+b[2]];
+  const vsub = (a, b)=>[a[0]-b[0], a[1]-b[1], a[2]-b[2]];
+  const vmul = (a, k)=>[a[0]*k, a[1]*k, a[2]*k];
+  const vcross = (a, b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+  const vnorm = a=> {
+    const l = Math.hypot(a[0], a[1], a[2]) || 1;
+    return [a[0]/l, a[1]/l, a[2]/l];
+  };
+
+  // grows one tree (branch segments and leaf quads); the branching rules follow the supplied birch and oak files
+  function makeTreeGeometry(kind, seed, maxLevel) {
+    const rnd = mulberry32(seed), birch = kind === 'birch', segs = [], leaves = [];
+    function addLeaves(p, count, spread, sMin, sVar) {
+      for(let k = 0; k < count; k++) {
+        leaves.push({
+          pos: [p[0] + (rnd()-.5) * spread * 2, p[1] + (rnd()-.5) * spread * 2, p[2] + (rnd()-.5) * spread * 2],
+          scale: sMin + rnd() * sVar, rx: rnd() * 6.283, ry: rnd() * 6.283, rz: rnd() * 6.283
+        });
+      }
+    }
+    function grow(start, dir, len, rad, level) {
+      const segCount = birch ? (level === 0 ? 8 : (level === 1 ? 4 : 3)) : (level === 0 ? 7 : (level === 1 ? 3 : 2));
+      let d = vnorm(dir);
+      const rEnd = rad * (birch ? (level === 0 ? .7 : .6) : (level === 0 ? .6 : .72));
+      const segLen = len / segCount;
+      let p = start;
+      for(let i = 0; i < segCount; i++) {
+        if(birch) {
+          if(level > 0) d = [d[0] + (rnd()-.5) * .15, d[1] + .05, d[2] + (rnd()-.5) * .15];
+          else d = [d[0] + (rnd()-.5) * .02, d[1], d[2] + (rnd()-.5) * .02];
+        } else {
+          const dev = level === 0 ? .045 : .2;
+          d = [d[0] + (rnd()-.5) * dev, d[1] + (rnd()-.5) * dev * .5 - (level >= 3 ? .028 : 0), d[2] + (rnd()-.5) * dev];
+        }
+        d = vnorm(d);
+        const p2 = vadd(p, vmul(d, segLen * (birch ? 1 : .86 + rnd() * .28)));
+        const t0 = i / segCount, t1 = (i + 1) / segCount;
+        const rs = birch ? (level < 2 ? 8 : 4) : (level < 2 ? 10 : (level < 4 ? 6 : 4));
+        segs.push({ a: p, b: p2, ra: rad + (rEnd - rad) * t0, rb: rad + (rEnd - rad) * t1, rs: rs });
+        p = p2;
+        if(birch&&level >= 3)addLeaves(p, level === maxLevel ? 6 : 4, level === maxLevel ? .6 : .4, .45, .3);
+      }
+      if(!birch&&level >= 3)addLeaves(p, level === maxLevel ? 14 : 7, level === maxLevel ? .8 : .6, .4, .25);
+      if(level >= maxLevel||rEnd < .012)return;
+      const nChildren = birch ? (level === 0 ? 6 : (level === 1 ? 5 : 3)) : (level === 0 ? 6 + (rnd() < .5 ? 1 : 0) : (level === 1 ? 4 : (rnd() < .5 ? 3 : 2)));
+      const ref = Math.abs(d[1]) < .9 ? [0, 1, 0] : [1, 0, 0];
+      const t1v = vnorm(vcross(d, ref)), t2v = vnorm(vcross(d, t1v));
+      for(let i = 0; i < nChildren; i++) {
+        const phi = i * 2.39996323 + rnd() * .65;
+        const theta = birch ? (level === 0 ? .85 : .7) + rnd() * .3 : (level === 0 ? .65 : .5) + rnd() * .25;
+        let cd = vadd(vadd(vmul(d, Math.cos(theta)), vmul(t1v, Math.sin(theta) * Math.cos(phi))), vmul(t2v, Math.sin(theta) * Math.sin(phi)));
+        cd[1] += birch ? (level === 0 ? .2 : .1) : (level === 0 ? .5 : .15);
+        cd = vnorm(cd);
+        const cLen = birch ? len * (level === 0 ? .8 : .75) : len * (level === 0 ? .75 : .8) * (.85 + rnd() * .3);
+        const cRad = rEnd * (birch ? .8 + rnd() * .1 : .82 + rnd() * .1);
+        grow(p, cd, cLen, cRad, level + 1);
+      }
+    }
+    grow([0, 0, 0], [0, 1, 0], birch ? 7.5 : 5.5, birch ? .35 : .55, 0);
+    // branches become tapered tubes
+    const bp = [], bn = [], bu = [], bi = [];
+    for(const sg of segs) {
+      const axis = vsub(sg.b, sg.a), len = Math.hypot(axis[0], axis[1], axis[2]);
+      if(len < 1e-5)continue;
+      const dir = vnorm(axis), ref = Math.abs(dir[1]) < .9 ? [0, 1, 0] : [1, 0, 0];
+      const u = vnorm(vcross(dir, ref)), w = vcross(dir, u), base = bp.length / 3;
+      const uS = Math.max(1, sg.ra * 7), vS = len * 1.45;
+      for(let j = 0; j <= sg.rs; j++) {
+        const th = j / sg.rs * 6.2832, c = Math.cos(th), sn = Math.sin(th);
+        const o = [u[0]*c+w[0]*sn, u[1]*c+w[1]*sn, u[2]*c+w[2]*sn];
+        bp.push(sg.a[0]+o[0]*sg.ra, sg.a[1]+o[1]*sg.ra, sg.a[2]+o[2]*sg.ra);
+        bp.push(sg.b[0]+o[0]*sg.rb, sg.b[1]+o[1]*sg.rb, sg.b[2]+o[2]*sg.rb);
+        bn.push(o[0], o[1], o[2], o[0], o[1], o[2]);
+        bu.push(j / sg.rs * uS, 0, j / sg.rs * uS, vS);
+      }
+      for(let j = 0; j < sg.rs; j++) {
+        const k = base + j * 2;
+        bi.push(k, k+1, k+2, k+1, k+3, k+2);
+      }
+    }
+    // leaves become small textured quads with random orientation
+    const lp = [], ln = [], lu = [], li = [];
+    const lw = birch ? .4 : .5, lh = birch ? .4 : 1;
+    for(const L of leaves) {
+      const cx = Math.cos(L.rx), sx = Math.sin(L.rx), cy = Math.cos(L.ry), sy = Math.sin(L.ry), cz = Math.cos(L.rz), sz = Math.sin(L.rz);
+      const rot = v=> {
+        let x = v[0]*cz - v[1]*sz, y = v[0]*sz + v[1]*cz, z = v[2];
+        const x2 = x*cy + z*sy, z2 = -x*sy + z*cy;
+        const y3 = y*cx - z2*sx, z3 = y*sx + z2*cx;
+        return [x2, y3, z3];
+      };
+      const nrm = rot([0, 0, 1]), base = lp.length / 3;
+      for(const c of [[-.5, -.5, 0, 0], [.5, -.5, 1, 0], [.5, .5, 1, 1], [-.5, .5, 0, 1]]) {
+        const q = rot([c[0] * lw * L.scale, c[1] * lh * L.scale, 0]);
+        lp.push(L.pos[0]+q[0], L.pos[1]+q[1], L.pos[2]+q[2]);
+        ln.push(nrm[0], nrm[1], nrm[2]);
+        lu.push(c[2], c[3]);
+      }
+      li.push(base, base+1, base+2, base, base+2, base+3);
+    }
+    return { bark: { pos: bp, nrm: bn, uv: bu, idx: bi }, leaf: { pos: lp, nrm: ln, uv: lu, idx: li } };
+  }
+
+  // ---- GPU side: textures, shader, instanced meshes
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  [[4, makeBirchBarkTexture(), true], [5, makeOakBarkTexture(), true], [6, makeBirchLeafTexture(), false], [7, makeOakLeafTexture(), false]].forEach(([unit, canvas, repeat])=> {
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, repeat ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  });
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  const MESH_VS = `#version 300 es
+in vec3 aPos;
+in vec3 aNrm;
+in vec2 aUv;
+in vec4 iPos;
+in vec4 iTint;
+uniform vec3 uCam, uF, uR, uU;
+uniform float uFoc, uAsp, uTime;
+uniform vec2 uWind;
+out vec3 vN;
+out vec2 vUv;
+out vec4 vTint;
+out vec3 vLoc;
+out float vDist;
+void main() {
+  float h=max(aPos.y, 0.);
+  vec3 lp=aPos;
+  lp.xz+=(uWind+.25*vec2(sin(uTime*1.3+h+iTint.a*6.), cos(uTime*1.1+h*1.3)))*h*h*.0045; // sway: the higher, the stronger
+  vec3 wp=iPos.xyz+lp*iPos.w;
+  vec3 v=wp-uCam;
+  float zc=dot(v, uF);
+  gl_Position=vec4(2.*uFoc/uAsp*dot(v, uR), 2.*uFoc*dot(v, uU), (1500.1/1499.9)*zc-300./1499.9, zc);
+  vN=aNrm;
+  vUv=aUv;
+  vTint=iTint;
+  vLoc=lp;
+  vDist=length(v);
+}`;
+  const MESH_FS = `#version 300 es
+precision highp float;
+in vec3 vN;
+in vec2 vUv;
+in vec4 vTint;
+in vec3 vLoc;
+in float vDist;
+uniform sampler2D uTex;
+uniform float uLeaf, uSeasonM, uFogK, uWet;
+uniform vec3 uSunDir, uSunCol, uAmb, uFogCol;
+uniform vec2 uRes;
+out vec4 oc;
+float ss(float a, float b, float x) {
+  float t=clamp((x-a)/(b-a), 0., 1.);
+  return t*t*(3.-2.*t);
+}
+float rnd(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233)))*43758.5453);
+}
+void main() {
+  vec4 tx=texture(uTex, vUv);
+  float aut=ss(.2, 1., uSeasonM)*(1.-ss(1.2, 1.7, uSeasonM));
+  float bare=ss(1.2, 1.7, uSeasonM);
+  vec3 alb=tx.rgb*vTint.rgb;
+  if(uLeaf>.5) {
+    if(tx.a<.45)discard;
+    if(rnd(floor(vLoc.xy*2.5)+floor(vLoc.z*2.5)*7.+vTint.xy*50.)<bare)discard; // leaves fall in autumn
+    vec3 fall=mix(vec3(.75, .42, .06), vec3(.7, .15, .05), step(.6, vTint.a))*(.6+.8*dot(tx.rgb, vec3(.33)));
+    alb=mix(alb, fall, aut*.85);
+  } else alb*=.9;
+  vec3 n=normalize(vN);
+  if(!gl_FrontFacing)n=-n;
+  float d=dot(n, uSunDir);
+  float ndl=uLeaf>.5?clamp((d+.4)/1.4, 0., 1.)*.9+.1*abs(d):max(d, 0.);
+  float ao=uLeaf>.5?.55+.45*ss(0., 9., vLoc.y):.75;
+  vec3 col=alb*(uSunCol*ndl+uAmb*(.55+.45*n.y)*ao);
+  col*=1.-.3*uWet;
+  float f=1.-exp(-pow(vDist/uFogK, 1.6));
+  col=mix(col, uFogCol, f);
+  col*=1.15;
+  col=(col*(2.51*col+.03))/(col*(2.43*col+.59)+.14);
+  float lm=dot(col, vec3(.299, .587, .114));
+  col=mix(vec3(lm), col, 1.3);
+  col*=mix(vec3(.94, 1., 1.08), vec3(1.07, 1., .9), ss(.15, .65, lm));
+  vec2 vq=gl_FragCoord.xy/uRes-.5;
+  col*=1.-dot(vq, vq)*.85;
+  col=pow(clamp(col, 0., 1.), vec3(.4545));
+  oc=vec4(col, 1.);
+}`;
+  const mp = gl.createProgram();
+  gl.attachShader(mp, mk(gl.VERTEX_SHADER, MESH_VS));
+  gl.attachShader(mp, mk(gl.FRAGMENT_SHADER, MESH_FS));
+  ['aPos', 'aNrm', 'aUv', 'iPos', 'iTint'].forEach((n, i)=>gl.bindAttribLocation(mp, i, n));
+  gl.linkProgram(mp);
+  if(!gl.getProgramParameter(mp, gl.LINK_STATUS))console.error(gl.getProgramInfoLog(mp));
+  const MU = {};
+  ['uCam', 'uF', 'uR', 'uU', 'uFoc', 'uAsp', 'uTime', 'uWind', 'uTex', 'uLeaf', 'uSeasonM', 'uFogK', 'uWet', 'uSunDir', 'uSunCol', 'uAmb', 'uFogCol', 'uRes'].forEach(n=>MU[n] = gl.getUniformLocation(mp, n));
+
+  function makeVao(geo, instBuf) {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    [[0, geo.pos, 3], [1, geo.nrm, 3], [2, geo.uv, 2]].forEach(([loc, data, size])=> {
+      const b = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, b);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+    });
+    const ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(geo.idx), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    [[3, 0], [4, 16]].forEach(([loc, off])=> {
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 4, gl.FLOAT, false, 32, off);
+      gl.vertexAttribDivisor(loc, 1);
+    });
+    gl.bindVertexArray(null);
+    return { vao: vao, count: geo.idx.length };
+  }
+  const TREE_CAP = 40;
+  const treeSets = [];
+  let treeDetail = -1, lastTreeUpd = -9, lastTreeX = 1e9, lastTreeZ = 1e9;
+  function buildTreeSets(detail) {
+    treeSets.length = 0;
+    const lvl = detail === 2 ? 4 : 3;
+    [['birch', 11], ['birch', 29], ['oak', 5], ['oak', 47]].forEach(([kind, seed])=> {
+      const g = makeTreeGeometry(kind, seed, lvl);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, TREE_CAP * 32, gl.DYNAMIC_DRAW);
+      treeSets.push({ kind: kind, bark: makeVao(g.bark, buf), leaf: makeVao(g.leaf, buf), buf: buf, data: new Float32Array(TREE_CAP * 8), n: 0, dirty: false });
+    });
+    treeDetail = detail;
+    lastTreeUpd = -9;
+  }
+  // the same tree placement as the shader (cells of 16 units), so a model stands exactly where the shader tree would
+  function treeCell(ix, iz) {
+    const dens = ss(.52, .8, nz(ix * .22 + 3.7, iz * .22 + 3.7));
+    if(hs(ix+3, iz+71) > dens * .6 + .008)return null;
+    const cx = (ix + .5 + (hs(ix+5, iz+9) - .5) * .3) * 16, cz = (iz + .5 + (hs(ix+13, iz+2) - .5) * .3) * 16;
+    const ty = H(cx, cz);
+    if(ty < 2.3||ty > 36)return null;
+    if($('o_cp').checked) {
+      const c = campAt(Math.floor(cx / 110), Math.floor(cz / 110));
+      if(c&&Math.hypot(cx - c.x, cz - c.z) < 12)return null;
+    }
+    const sp = hs(ix+17, iz+31);
+    let sc = .75 + .45 * hs(ix+21, iz+8);
+    if(sp >= .4&&sp < .75)sc = Math.min(sc, 1.05);
+    return { x: cx, z: cz, y: ty, s: sc, sp: sp, vr: hs(ix+5, iz+44), tt: hs(ix+40, iz+60), h1: hs(ix+60, iz+3), h2: hs(ix+61, iz+4) };
+  }
+  function updateTreeInstances(x, z, radius) {
+    if(time - lastTreeUpd < .5&&Math.hypot(x - lastTreeX, z - lastTreeZ) < 8)return;
+    lastTreeUpd = time;
+    lastTreeX = x;
+    lastTreeZ = z;
+    for(const st of treeSets) {
+      st.n = 0;
+      st.dirty = true;
+    }
+    const i0 = Math.floor((x - radius) / 16), i1 = Math.floor((x + radius) / 16), j0 = Math.floor((z - radius) / 16), j1 = Math.floor((z + radius) / 16);
+    for(let ix = i0; ix <= i1; ix++) {
+      for(let iz = j0; iz <= j1; iz++) {
+        const t = treeCell(ix, iz);
+        if(!t||Math.hypot(t.x - x, t.z - z) > radius)continue;
+        const birch = t.sp < .4||(t.sp >= .75&&t.vr < .35);
+        const st = treeSets[(birch ? 0 : 2) + (t.vr < .5 ? 0 : 1)];
+        if(st.n >= TREE_CAP)continue;
+        const o = st.n * 8, k = birch ? .85 : .9;
+        st.data[o] = t.x;
+        st.data[o+1] = t.y - .15;
+        st.data[o+2] = t.z;
+        st.data[o+3] = t.s * k;
+        st.data[o+4] = .85 + .25 * t.h1;
+        st.data[o+5] = .9 + .2 * t.h2;
+        st.data[o+6] = .85 + .15 * t.tt;
+        st.data[o+7] = t.tt;
+        st.n++;
+      }
+    }
+  }
+  function mixV(a, b, t) {
+    return [a[0] + (b[0]-a[0]) * t, a[1] + (b[1]-a[1]) * t, a[2] + (b[2]-a[2]) * t];
+  }
+  // the same sun, sky light and haze colours the landscape shader computes
+  function meshLighting(sunE, rain) {
+    const dayf = ss(-.08, .25, sunE), moon = ss(-.08, -.25, sunE) * .22;
+    let sc = mixV([1, .4, .12], [1, .93, .82], ss(0, .45, sunE));
+    sc = [sc[0] * 3 * dayf + .55 * moon, sc[1] * 3 * dayf + .7 * moon, sc[2] * 3 * dayf + moon].map(v=>v * (1 - .85 * rain));
+    let amb = mixV([.012, .018, .04], [.3, .42, .68], dayf);
+    const grey = (amb[0] + amb[1] + amb[2]) * .33 * .9;
+    amb = mixV(amb, [grey, grey, grey], .6 * rain);
+    let hor = mixV(mixV([.01, .015, .035], [1, .5, .28], ss(-.12, 0, sunE)), [.68, .82, .95], ss(0, .4, sunE));
+    hor = mixV(hor, [.42 * (.15 + .85 * dayf), .46 * (.15 + .85 * dayf), .5 * (.15 + .85 * dayf)], rain);
+    return { sc: sc, amb: amb, hor: hor };
+  }
+  function drawTrees(rc, F, R, Uv, sun, sunE, wx, wz) {
+    if(!meshRNow)return;
+    const detail = +$('mt').value;
+    if(treeDetail !== detail)buildTreeSets(detail);
+    updateTreeInstances(rc.x, rc.z, meshRNow);
+    const lt = meshLighting(sunE, rainLevel);
+    gl.useProgram(mp);
+    gl.depthFunc(gl.LEQUAL);
+    gl.uniform3f(MU.uCam, rc.x, rc.y, rc.z);
+    gl.uniform3fv(MU.uF, F);
+    gl.uniform3fv(MU.uR, R);
+    gl.uniform3fv(MU.uU, Uv);
+    gl.uniform1f(MU.uFoc, foc);
+    gl.uniform1f(MU.uAsp, cv.width / cv.height);
+    gl.uniform1f(MU.uTime, time);
+    gl.uniform2f(MU.uWind, wx, wz);
+    gl.uniform1f(MU.uSeasonM, seasonLevel);
+    gl.uniform1f(MU.uFogK, 450 - 260 * rainLevel);
+    gl.uniform1f(MU.uWet, rainLevel);
+    gl.uniform3fv(MU.uSunDir, sunE > -.08 ? sun : [-sun[0], -sun[1], -sun[2]]);
+    gl.uniform3fv(MU.uSunCol, lt.sc);
+    gl.uniform3fv(MU.uAmb, lt.amb);
+    gl.uniform3fv(MU.uFogCol, lt.hor);
+    gl.uniform2f(MU.uRes, cv.width, cv.height);
+    for(const st of treeSets) {
+      if(!st.n)continue;
+      if(st.dirty) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, st.buf);
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, st.data, 0, st.n * 8);
+        st.dirty = false;
+      }
+      const birch = st.kind === 'birch';
+      gl.uniform1f(MU.uLeaf, 0);
+      gl.uniform1i(MU.uTex, birch ? 4 : 5);
+      gl.bindVertexArray(st.bark.vao);
+      gl.drawElementsInstanced(gl.TRIANGLES, st.bark.count, gl.UNSIGNED_INT, 0, st.n);
+      if(seasonLevel < 1.75) {
+        gl.uniform1f(MU.uLeaf, 1);
+        gl.uniform1i(MU.uTex, birch ? 6 : 7);
+        gl.bindVertexArray(st.leaf.vao);
+        gl.drawElementsInstanced(gl.TRIANGLES, st.leaf.count, gl.UNSIGNED_INT, 0, st.n);
+      }
+    }
+    gl.bindVertexArray(null);
+    gl.useProgram(pg);
+    gl.depthFunc(gl.ALWAYS);
+  }
+
   const joy = { x: 0, y: 0, id: null };
   const joyEl = $('joy'), knob = $('knob');
   function joyMove(e) {
@@ -1321,13 +2574,17 @@ TEX_DATA.forEach((src, unit) => {
     btnRun = false;
     $('b_run').classList.remove('on');
   }));
+  $('b_view').addEventListener('click', ()=> {
+    viewTP = !viewTP;
+    showMsg(viewTP ? 'Вид от третьего лица' : 'Вид от первого лица');
+  });
   $('b_shot').addEventListener('click', ()=> {
     shot = true;
   });
-  const SAVE_IDS = ['ql', 'md', 'snd', 'vol', 'o_bd', 'sp', 'al', 'lo', 'ad', 'au', 'o_sh', 'o_tr', 'o_gr', 'o_rf', 'fps30', 'mq', 'wx', 'apd'];
+  const SAVE_IDS = ['ql', 'md', 'snd', 'vol', 'o_bd', 'sp', 'al', 'lo', 'ad', 'au', 'o_sh', 'o_tr', 'o_gr', 'o_rf', 'fps30', 'mq', 'wx', 'apd', 'sea', 'o_mm', 'skb', 'skk', 'o_cp', 'fpt', 'mt'];
   $('apd').checked = !('ontouchstart' in window);
   try {
-    const saved = JSON.parse(localStorage.getItem('landscape-settings') || '{}');
+    const saved = JSON.parse(localStorage.getItem('landscape-settings-v2') || '{}');
     for(const id of SAVE_IDS) {
       if(!(id in saved))continue;
       const el = $(id);
@@ -1342,12 +2599,13 @@ TEX_DATA.forEach((src, unit) => {
         const el = $(id);
         o[id] = el.type === 'checkbox' ? el.checked : el.value;
       }
-      localStorage.setItem('landscape-settings', JSON.stringify(o));
+      localStorage.setItem('landscape-settings-v2', JSON.stringify(o));
     } catch(e) {}
   }
   $('pn').addEventListener('change', saveSettings);
   $('pn').addEventListener('input', saveSettings);
 
+  let bow = 0, hadRain = false, bowT = 0;
   function frame(now) {
     if($('fps30').checked&&now-last<30) {
       requestAnimationFrame(frame);
@@ -1367,10 +2625,11 @@ TEX_DATA.forEach((src, unit) => {
     } else if($('mq').checked) scale = maxScale;
     else if(fc%4==0) {
       // react quickly: very slow frames shrink the picture hard, then it creeps back up
-      // thresholds follow the display's real refresh interval, so a 30 Hz display is not mistaken for "too slow"
-      if(ft>Math.max(60, frameMin*3))scale=Math.max(.3, scale*.6);
-      else if(ft>Math.max(26, frameMin*1.4))scale=Math.max(.35, scale*.92);
-      else if(ft<frameMin*1.2)scale=Math.min(maxScale, scale*1.06)
+      // thresholds follow the slower of the display's real refresh interval and the chosen target FPS
+      const base=Math.max(frameMin, 1000/(+$('fpt').value));
+      if(ft>Math.max(60, base*3))scale=Math.max(.3, scale*.6);
+      else if(ft>Math.max(26, base*1.4))scale=Math.max(.35, scale*.92);
+      else if(ft<base*1.2)scale=Math.min(maxScale, scale*1.06)
     }
     const w=Math.max(2, Math.round(cv.clientWidth*scale)), h=Math.max(2, Math.round(cv.clientHeight*scale));
     if(Math.abs(cv.width-w)>w*.04||Math.abs(cv.height-h)>h*.04||fc==1) {
@@ -1405,7 +2664,24 @@ TEX_DATA.forEach((src, unit) => {
     // weather, lightning, headlight, sprint key, field of view
     frame.wx=Math.cos(ang)*str;
     rainLevel+=(($('wx').value==='rain'?1:0)-rainLevel)*Math.min(1, dt*.25);
-    if(rainLevel>.6) {
+    seasonLevel+=(+$('sea').value-seasonLevel)*Math.min(1, dt*.4);
+    fishT-=dt;
+    if(fishT<=0) {
+      fishT=6+Math.random()*10;
+      if($('md').value!=='fly'&&(ride.mode==='kayak'||frame.wn>0)) {
+        for(let k=0; k<8; k++) {
+          const d=8+Math.random()*18, a=cam.yaw+(Math.random()-.5)*1.8;
+          const fxp=cam.x+Math.sin(a)*d, fzp=cam.z+Math.cos(a)*d;
+          if(H(fxp, fzp)<-.5) {
+            addRipple(fxp, fzp, 1.6);
+            plop();
+            break;
+          }
+        }
+      }
+    }
+    if(fc%15==0)updateMinimap();
+    if(rainLevel>.6&&seasonLevel<1.5) {
       thunderT-=dt;
       if(thunderT<=0) {
         thunderT=8+Math.random()*14;
@@ -1414,9 +2690,20 @@ TEX_DATA.forEach((src, unit) => {
       }
     }
     flash=Math.max(0, flash-dt*3);
+    // a rainbow appears for a couple of minutes once heavy rain has stopped and the sun is out
+    if(rainLevel>.5) {
+      hadRain=true;
+      bowT=0;
+    }
+    const bowOn=hadRain&&rainLevel<.3&&sunE>.08&&seasonLevel<1.5;
+    if(bowOn) {
+      bowT+=dt;
+      if(bowT>150)hadRain=false;
+    }
+    bow+=((bowOn&&bowT<150?1:0)-bow)*Math.min(1, dt*.4);
     lampOn=$('md').value!=='fly'&&(lampState===1||(lampState===0&&(sunE<.12||rainLevel>.7)));
     ride.sprintHeld=btnRun||!!keys.ShiftLeft||!!keys.ShiftRight;
-    foc+=((1.3-Math.min(1, ride.speed/14)*.18)-foc)*Math.min(1, dt*3);
+    foc+=((1.15-Math.min(1, ride.speed/14)*.15)-foc)*Math.min(1, dt*3);
     // movement
     const fx=Math.sin(cam.yaw), fz=Math.cos(cam.yaw);
     const keyF=Math.max(-1, Math.min(1, ((keys.KeyW||keys.ArrowUp)?1:0)-((keys.KeyS||keys.ArrowDown)?1:0)+joy.y));
@@ -1444,16 +2731,54 @@ TEX_DATA.forEach((src, unit) => {
         if(H(cam.x+d[0], cam.z+d[1])<0)frame.wn=Math.max(frame.wn, .6);
       }
     }
+    if(fc%10==0) {
+      const nc = nearestCamp(cam.x, cam.z);
+      frame.camD = nc ? nc.d : 999;
+      if(nc&&nc.d < 30&&!foundCamps.has(nc.c.id)) {
+        foundCamps.add(nc.c.id);
+        showMsg('Вы нашли стоянку: шалаш, палатка и костёр');
+      }
+    }
+    if(fc%40==0)frame.camList = camsAround(cam.x, cam.z);
     msgTimer-=dt;
     if(msgTimer<=0)$('msg').style.opacity=0;
     const pv=cam.pitch+(ride.pOff||0);
     const cp=Math.cos(pv);
     const F=[fx*cp, Math.sin(pv), fz*cp], R=norm(cross(F, [0, 1, 0])), Uv=cross(R, F);
     const ph=(hour-6)/12*Math.PI, sun=norm([Math.cos(ph)*.85, Math.sin(ph), .5]);
+    gl.useProgram(pg);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.ALWAYS);
+    gl.depthMask(true);
+    const mtv=+$('mt').value;
+    meshRNow=(mtv>0&&$('o_tr').checked)?(mtv===2?90:($('lo').checked?45:60)):0;
+    gl.uniform1f(U.uMeshR, meshRNow);
+    gl.uniform1f(U.uBow, bow);
     gl.uniform2f(U.uRes, cv.width, cv.height);
     gl.uniform2f(U.uWind, Math.cos(ang)*str, Math.sin(ang)*str);
     gl.uniform1f(U.uTime, time);
-    gl.uniform3f(U.uCam, cam.x, cam.y, cam.z);
+    // render camera: the rider's eye in first person, orbiting behind the rider in third person
+    const veh=$('md').value!=='fly';
+    const rc={x:cam.x, y:cam.y, z:cam.z};
+    if(veh&&viewTP) {
+      const dist=ride.mode==='bike'?3.4:5.2;
+      rc.x=cam.x-F[0]*dist;
+      rc.y=cam.y-F[1]*dist+.3;
+      rc.z=cam.z-F[2]*dist;
+      const gmin=Math.max(H(rc.x, rc.z), 0)+.5;
+      if(rc.y<gmin)rc.y=gmin;
+    }
+    const bike=ride.mode==='bike';
+    gl.uniform3f(U.uCam, rc.x, rc.y, rc.z);
+    gl.uniform4f(U.uObj, cam.x+fx*(bike?.1:.04), cam.y-(bike?1.4:.86), cam.z+fz*(bike?.1:.04), cam.yaw);
+    gl.uniform4f(U.uObj2, -ride.steer*.4, ride.wheel, bike?ride.crank:ride.pad*2.2, ride.speed);
+    gl.uniform1f(U.uObjMode, veh?(bike?1:2):0);
+    gl.uniform1f(U.uThird, viewTP?1:0);
+    gl.uniform4fv(U.uRip, ripples);
+    gl.uniform1f(U.uSeason, seasonLevel);
+    gl.uniform1f(U.uSkinB, +$('skb').value);
+    gl.uniform1f(U.uSkinK, +$('skk').value);
+    gl.uniform1f(U.uCamp, $('o_cp').checked ? 1 : 0);
     gl.uniform3fv(U.uF, F);
     gl.uniform3fv(U.uR, R);
     gl.uniform3fv(U.uU, Uv);
@@ -1463,9 +2788,17 @@ TEX_DATA.forEach((src, unit) => {
     gl.uniform1f(U.uLamp, lampOn ? 1 : 0);
     gl.uniform1f(U.uFoc, foc);
     gl.uniform4f(U.uOpt, $('o_sh').checked ? 1 : 0, $('o_tr').checked ? 1 : 0, $('o_gr').checked ? 1 : 0, $('o_rf').checked ? 1 : 0);
+    const sx0=cam.x, sy0=cam.y, sz0=cam.z;
+    cam.x=rc.x;
+    cam.y=rc.y;
+    cam.z=rc.z;
     drawOverlay(dt, F, R, Uv, sunE);
+    cam.x=sx0;
+    cam.y=sy0;
+    cam.z=sz0;
     updateAudio(dt, str, frame.wn||0, sunE);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    drawTrees(rc, F, R, Uv, sun, sunE, Math.cos(ang)*str, Math.sin(ang)*str);
     if(shot) {
       // the picture must be read in the same frame it was drawn
       shot=false;
