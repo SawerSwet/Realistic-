@@ -45,6 +45,9 @@ Set-RegValue "HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppCompat" "AITEnable" 0
 Set-RegValue "HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppCompat" "DisableUAR" 1
 
 # --- [5/12] Disable useless / heavy services ---
+# NOTE: we only set the startup type and send an async stop command
+# (sc.exe stop does not wait). PowerShell Stop-Service can hang
+# forever on services like NDU, which refuses to stop cleanly.
 Write-Host "[5/12] Services"
 $services = @{
     "DiagTrack"        = "Disabled"   # telemetry
@@ -61,8 +64,8 @@ foreach ($s in $services.Keys) {
     $svc = Get-Service -Name $s -ErrorAction SilentlyContinue
     if ($svc) {
         Set-Service -Name $s -StartupType $services[$s] -ErrorAction SilentlyContinue
-        if ($svc.Status -ne "Stopped") { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue }
-        Write-Host "   $s -> $($services[$s])"
+        & sc.exe stop $s 2>$null | Out-Null
+        Write-Host "   $s -> $($services[$s]) (will fully stop after restart)"
     }
 }
 
